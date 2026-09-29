@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ticket Board</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='2' width='4' height='12' rx='1' fill='%234f6bed'/><rect x='6' y='2' width='4' height='8' rx='1' fill='%234f6bed' opacity='.7'/><rect x='11' y='2' width='4' height='5' rx='1' fill='%234f6bed' opacity='.45'/></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Tickets</h1>
+    <select id="feature" aria-label="Feature"></select>
+    <input id="search" type="search" placeholder="Filter by number, title, text…" aria-label="Filter">
+    <label class="toggle"><input id="hideEmpty" type="checkbox"> Hide empty lanes</label>
+    <label class="toggle"><input id="unblockedOnly" type="checkbox"> Unblocked only</label>
+    <span id="stats" class="stats"></span>
+    <span id="live" class="live" title="Live reload">●</span>
+  </header>
+
+  <main id="board" class="board"></main>
+
+  <aside id="drawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <div>
+        <div id="drawerMeta" class="drawer-meta"></div>
+        <h2 id="drawerTitle"></h2>
+      </div>
+      <button id="drawerClose" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <div id="drawerLinks" class="drawer-links"></div>
+    <article id="drawerBody" class="markdown"></article>
+  </aside>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

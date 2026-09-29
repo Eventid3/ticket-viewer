@@ -1,0 +1,16 @@
+{
+  "name": "ticket-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local kanban board for .scratch/<feature>/issues/*.md tickets",
+  "type": "module",
+  "bin": {
+    "ticket-viewer": "./cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
