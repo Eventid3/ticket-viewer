@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseTicket, setStatus, loadFeature, resolveFeatures } from '../lib/tickets.mjs';
+import { parseTicket, setStatus, appendComment, loadFeature, resolveFeatures } from '../lib/tickets.mjs';
 
 const BOLD = `# 06: Build green on Umbraco 17
 
@@ -55,6 +55,15 @@ test('setStatus inserts a status line when missing', () => {
   assert.equal(setStatus('# Q\n\nBody\n', 'needs-triage'), '# Q\n\nStatus: needs-triage\n\nBody\n');
 });
 
+test('appendComment adds to an existing Comments section', () => {
+  const out = appendComment(BOLD, 'please add a test', '2026-09-29');
+  assert.match(out, /- \*\*2026-09-01:\*\* looks good\n- \*\*2026-09-29 \(review\):\*\* please add a test\n$/);
+});
+
+test('appendComment creates a Comments section when missing', () => {
+  assert.equal(appendComment('# Q\n\nBody\n', 'a\nb', '2026-09-29'), '# Q\n\nBody\n\n## Comments\n\n- **2026-09-29 (review):** a b\n');
+});
+
 test('loadFeature marks tickets blocked until blockers are done', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tickets-'));
   const issues = path.join(root, '.scratch', 'feat', 'issues');
@@ -71,8 +80,11 @@ test('loadFeature marks tickets blocked until blockers are done', () => {
   assert.equal(byNum['04'].blocked, true);
   assert.deepEqual(byNum['04'].openBlockers, ['02']);
   assert.deepEqual(byNum['01'].blocks, ['03', '04']);
+  assert.equal(byNum['01'].path, '.scratch/feat/issues/01-a.md');
 
   // A feature folder can be passed directly, too.
-  assert.equal(resolveFeatures(path.join(root, '.scratch', 'feat')).features.length, 1);
+  const single = resolveFeatures(path.join(root, '.scratch', 'feat')).features;
+  assert.equal(single.length, 1);
+  assert.equal(loadFeature(single[0])[0].path, '.scratch/feat/issues/01-a.md');
   fs.rmSync(root, { recursive: true });
 });

@@ -2,11 +2,11 @@
 
 const ALL = '__all__';
 const NO_STATUS = '';
-const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'resolved', 'wontfix'];
+const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
 const $ = id => document.getElementById(id);
-const state = { data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false };
+const state = { data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false, detail: null, dragging: null };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
@@ -39,6 +39,43 @@ async function load() {
   if (state.feature !== ALL && !names.includes(state.feature)) state.feature = names[0];
   renderFeatureSelect();
   render();
+  loadDetail();
+}
+
+function agentOf(t) { return state.data.agents?.[t.id] || null; }
+// The session is working or waiting on you, so it may still change the worktree.
+function agentBusy(a) { return !!a && ['starting', 'running', 'waiting'].includes(a.state); }
+
+// Status changes the board may make itself (the server enforces the same list).
+function canMove(t, to) {
+  if (!(state.data.moves[t.status] || []).includes(to)) return false;
+  if (t.status === 'claimed' && agentBusy(agentOf(t))) return false;
+  return !(to === 'claimed' && (t.blocked || !state.data.agents));
+}
+
+async function api(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (res.ok) return true;
+  const err = await res.json().catch(() => ({}));
+  toast(err.error || `Request failed (${res.status})`);
+  return false;
+}
+
+async function moveTicket(t, to, notes) {
+  if (!(await api('/api/move', { id: t.id, to, notes }))) return false;
+  toast(to === 'claimed' ? `${label(t)}: agent started · claude attach to watch` : `${label(t)} → ${to}`);
+  return true;
+}
+
+// Agent log, commits and diff stat for the open ticket; polled while its agent runs.
+async function loadDetail() {
+  clearTimeout(loadDetail.timer);
+  const t = state.ticket && findTicket(state.ticket);
+  if (!t || !agentOf(t)) { state.detail = null; renderAgent(); return; }
+  const res = await fetch(`/api/agent?id=${encodeURIComponent(t.id)}`);
+  state.detail = res.ok ? { id: t.id, ...(await res.json()) } : null;
+  renderAgent();
+  if (agentBusy(state.detail?.record)) loadDetail.timer = setTimeout(loadDetail, 3000);
 }
 
 function currentTickets() {
@@ -65,23 +102,37 @@ function laneList(tickets) {
   return lanes;
 }
 
-async function moveTicket(id, status) {
-  const t = findTicket(id);
-  if (!t || t.status === status || status === NO_STATUS) return;
-  const prev = t.status;
-  t.status = status; // optimistic; the file watcher will send the real state
-  render();
-  const res = await fetch('/api/status', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, status }),
-  });
-  if (!res.ok) {
-    t.status = prev;
-    render();
-    const err = await res.json().catch(() => ({}));
-    toast(`Could not update: ${err.error || res.status}`);
-  } else {
-    toast(`${label(t)} → ${status}`);
+// ---- clipboard --------------------------------------------------------------------------
+// The board never writes tickets: status changes go through the agent skills, so it hands out commands.
+const TRIAGE_STATES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix'];
+
+function implementCommand(t) { return `/implement ${t.path}`; }
+function attachCommand(a) { return `claude attach ${a.bgId}`; }
+function mergeCommand(a) { return `git merge ${a.branch} && git worktree remove ${a.worktree} && git branch -d ${a.branch}`; }
+function triageCommand(t, to) { return to ? `/triage move ${t.path} to ${to}` : `/triage ${t.path}`; }
+
+// The next step for a ticket: triage it until it's ready, then implement it. Null when it's not agent work.
+function nextCommand(t) {
+  const a = agentOf(t);
+  if (a?.bgId && t.status === 'claimed') return { text: attachCommand(a), what: 'attach command' };
+  if (!t.status || t.status === 'needs-triage' || t.status === 'needs-info') return { text: triageCommand(t), what: '/triage command' };
+  if (t.status === 'ready-for-agent') return { text: implementCommand(t), what: '/implement command' };
+  return null;
+}
+
+async function copy(text, what) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Clipboard API is missing outside secure contexts; fall back to a hidden textarea.
+    const ta = el('textarea', { style: 'position:fixed;opacity:0' }, text);
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (!ok) return toast(`Could not copy ${what}`);
   }
+  toast(`Copied ${what}: ${text}`);
 }
 
 // ---- rendering --------------------------------------------------------------------------
@@ -150,16 +201,15 @@ function renderLane(status, cards) {
       el('span', { class: 'dot' }), status || 'no status', el('span', { class: 'count' }, cards.length)),
     body);
 
-  if (status !== NO_STATUS) {
-    lane.addEventListener('dragover', e => { e.preventDefault(); lane.classList.add('drop'); });
-    lane.addEventListener('dragleave', e => { if (!lane.contains(e.relatedTarget)) lane.classList.remove('drop'); });
-    lane.addEventListener('drop', e => {
-      e.preventDefault();
-      lane.classList.remove('drop');
-      const id = e.dataTransfer.getData('text/ticket-id');
-      if (id) moveTicket(id, status);
-    });
-  }
+  const accepts = () => state.dragging && canMove(state.dragging, status);
+  lane.addEventListener('dragover', e => { if (accepts()) { e.preventDefault(); lane.classList.add('drop'); } });
+  lane.addEventListener('dragleave', e => { if (!lane.contains(e.relatedTarget)) lane.classList.remove('drop'); });
+  lane.addEventListener('drop', e => {
+    e.preventDefault();
+    lane.classList.remove('drop');
+    if (accepts()) moveTicket(state.dragging, status);
+  });
+
   return lane;
 }
 
@@ -168,6 +218,8 @@ function renderCard(t) {
   const foot = [];
   if (t.blocked) foot.push(el('span', { class: 'badge blocked', title: `Waiting on ${t.openBlockers.join(', ')}` }, `⛔ blocked by ${t.openBlockers.join(', ')}`));
   else if (!DONE.has(t.status) && t.blockedBy.length) foot.push(el('span', { class: 'badge ready', title: 'All blockers are done' }, '✓ unblocked'));
+  const agent = agentOf(t);
+  if (agent && !DONE.has(t.status)) foot.push(agentBadge(agent));
   if (t.type) foot.push(el('span', { class: 'badge' }, t.type));
   if (t.comments) foot.push(el('span', { class: 'badge', title: 'Comments' }, `💬 ${t.comments}`));
   if (t.checks.total) {
@@ -175,31 +227,53 @@ function renderCard(t) {
     foot.push(el('span', { class: 'progress-label' }, `${t.checks.done}/${t.checks.total}`));
   }
 
+  const next = nextCommand(t);
+  const movable = (state.data.moves[t.status] || []).some(to => canMove(t, to));
   const card = el('div', {
     class: 'card' + (state.ticket === t.id ? ' selected' : ''),
     style: `--lane-color:${laneColor(t.status)}`,
-    draggable: 'true', tabindex: '0', role: 'button',
+    tabindex: '0', role: 'button', draggable: movable ? 'true' : null,
+    ondragstart: e => { state.dragging = t; e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); },
+    ondragend: () => { state.dragging = null; card.classList.remove('dragging'); },
     onclick: () => openTicket(t.id),
     onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(t.id); } },
-    ondragstart: e => { e.dataTransfer.setData('text/ticket-id', t.id); e.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); },
-    ondragend: () => card.classList.remove('dragging'),
   },
     el('div', { class: 'card-top' },
       el('span', { class: 'card-num' }, label(t)),
-      state.feature === ALL ? el('span', { class: 'card-feature' }, `· ${t.feature}`) : null),
+      state.feature === ALL ? el('span', { class: 'card-feature' }, `· ${t.feature}`) : null,
+      next ? el('button', {
+        class: 'copy-btn', title: `Copy "${next.text}"`, 'aria-label': `Copy ${next.what}`,
+        onclick: e => { e.stopPropagation(); copy(next.text, next.what); },
+        onkeydown: e => e.stopPropagation(),
+      }, '⧉') : null),
     el('div', { class: 'card-title' }, t.title),
     t.summary ? el('div', { class: 'card-summary' }, t.summary) : null,
     foot.length ? el('div', { class: 'card-foot' }, foot) : null);
   return card;
 }
 
+function agentBadge(a) {
+  switch (a.state) {
+    case 'starting': return el('span', { class: 'badge agent running' }, '● agent starting');
+    case 'running': return el('span', { class: 'badge agent running', title: `Working on ${a.branch}` }, '● agent running');
+    case 'waiting': return el('span', { class: 'badge needs-you', title: `Attach to answer: ${attachCommand(a)}` }, `⚠ needs you: ${a.waitingFor}`);
+    case 'idle': return el('span', { class: 'badge needs-you', title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 agent is waiting for a reply');
+    case 'done': return el('span', { class: 'badge agent', title: a.branch }, '✓ agent done');
+    case 'failed': return el('span', { class: 'badge blocked', title: a.error || '' }, '✕ agent failed to start');
+    default: return el('span', { class: 'badge', title: 'The session is not running; attaching reopens it' }, '■ agent stopped');
+  }
+}
+
 function openTicket(id) {
   state.ticket = id;
+  state.detail = null;
   writeHash();
   render();
+  loadDetail();
 }
 function closeTicket() {
   state.ticket = null;
+  state.detail = null;
   writeHash();
   render();
 }
@@ -210,15 +284,17 @@ function renderDrawer() {
   if (!t) { drawer.hidden = true; return; }
   drawer.hidden = false;
 
-  const lanes = laneList(currentTickets()).filter(s => s !== NO_STATUS);
-  if (t.status && !lanes.includes(t.status)) lanes.push(t.status);
-  const statusSel = el('select', { 'aria-label': 'Status', onchange: e => moveTicket(t.id, e.target.value) },
-    t.status ? null : el('option', { value: '' }, 'no status'),
-    lanes.map(s => el('option', { value: s }, s)));
-  statusSel.value = t.status || '';
+  // Picking a state copies a /triage command, so the agent makes the move (and writes the brief).
+  const moveSel = el('select', {
+    'aria-label': 'Move via /triage',
+    onchange: e => { const to = e.target.value; e.target.value = ''; if (to) copy(triageCommand(t, to), '/triage command'); },
+  },
+    el('option', { value: '' }, 'Move via /triage…'),
+    TRIAGE_STATES.filter(s => s !== t.status).map(s => el('option', { value: s }, `→ ${s}`)));
 
   fill($('drawerMeta'),
-    el('span', { class: 'card-num' }, label(t)), el('span', {}, `· ${t.feature}`), statusSel,
+    el('span', { class: 'card-num' }, label(t)), el('span', {}, `· ${t.feature}`),
+    el('span', { class: 'badge status', style: `--lane-color:${laneColor(t.status)}` }, t.status || 'no status'),
     t.type ? el('span', { class: 'badge' }, t.type) : null,
     t.blocked ? el('span', { class: 'badge blocked' }, 'blocked') : null);
   $('drawerTitle').textContent = t.title;
@@ -235,9 +311,77 @@ function renderDrawer() {
   fill($('drawerLinks'),
     t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
     t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link),
-    el('code', { title: 'File' }, `${t.feature}/issues/${t.file}`));
+    el('button', { class: 'badge action', title: `Copy "${implementCommand(t)}"`, onclick: () => copy(implementCommand(t), '/implement command') }, '⧉ Copy /implement'),
+    el('button', { class: 'badge action', title: `Copy "${triageCommand(t)}"`, onclick: () => copy(triageCommand(t), '/triage command') }, '⧉ Copy /triage'),
+    moveSel,
+    el('button', { class: 'badge action', title: 'Copy file path', onclick: () => copy(t.path, 'path') }, el('code', {}, t.path)));
+  renderAgent();
   $('drawerBody').innerHTML = renderMarkdown(t.body);
   document.querySelectorAll('.card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+}
+
+// The Claude Code part of the drawer: start an agent, follow it, and review what it did.
+function renderAgent() {
+  const box = $('drawerAgent');
+  const t = state.ticket && findTicket(state.ticket);
+  const a = t && agentOf(t);
+  const d = state.detail?.id === t?.id ? state.detail : null;
+  if (!t || (!a && t.status !== 'ready-for-agent')) { box.hidden = true; return; }
+  box.hidden = false;
+  const btn = (text, attrs, onclick) => el('button', { class: 'btn', ...attrs, onclick }, text);
+
+  const busy = agentBusy(a);
+  const actions = [];
+  if (t.status === 'ready-for-agent') {
+    const why = !state.data.agents ? 'Agents need the project to be a git repository' : t.blocked ? `Blocked by ${t.openBlockers.join(', ')}` : null;
+    const verb = a?.sessionId ? '▶ Continue agent' : '▶ Start agent';
+    actions.push(btn(verb, { class: 'btn primary', disabled: !!why, title: why || 'Claim the ticket and run /implement as a background session' }, () => moveTicket(t, 'claimed')));
+  }
+  if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${a.state === 'waiting' || a.state === 'idle' ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
+  if (a?.bgId && a.state !== 'stopped' && a.state !== 'failed') actions.push(btn('■ Stop agent', { title: 'Stop the session; its conversation is kept' }, () => api('/api/agent/stop', { id: t.id })));
+  if (t.status === 'claimed' && a && !busy) {
+    actions.push(btn('↻ Continue agent', { title: 'Resume the session in the background and tell it to carry on' }, () => api('/api/agent/start', { id: t.id })));
+    actions.push(btn('Back to ready-for-agent', {}, () => moveTicket(t, 'ready-for-agent')));
+  }
+
+  let review = null;
+  if (t.status === 'ready-for-review' && a) {
+    const notes = el('textarea', { class: 'notes', rows: 3, placeholder: 'Review notes: sent to the agent\'s session and added to the ticket\'s ## Comments' });
+    review = el('div', { class: 'review' },
+      el('div', { class: 'agent-actions' },
+        btn('⇆ Open diff in meld', { class: 'btn primary', title: `git difftool -d ${a.base.slice(0, 8)} in the worktree` }, () => api('/api/agent/diff', { id: t.id })),
+        btn('✓ Approve', { title: 'Mark resolved, stop the session and copy the merge command' }, async () => {
+          if (await moveTicket(t, 'resolved')) copy(mergeCommand(a), 'merge command');
+        }),
+        btn('↩ Send back to agent', { title: 'Resume the agent\'s session with your notes' }, () => {
+          if (!notes.value.trim()) return toast('Write what should change first');
+          moveTicket(t, 'claimed', notes.value.trim());
+        })),
+      notes);
+  }
+
+  const pending = a?.state === 'waiting' && d?.items.at(-1)?.kind === 'tool' ? d.items.at(-1).text : null;
+  const last = pending
+    ? el('div', { class: 'last-message' }, el('strong', {}, 'Waiting to run: '), el('code', {}, pending), el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`))
+    : d?.lastMessage && ['idle', 'done', 'stopped'].includes(a?.state)
+      ? el('blockquote', { class: 'last-message', title: 'The agent\'s last message' }, d.lastMessage) : null;
+  const changes = d?.changes;
+  fill(box,
+    el('div', { class: 'agent-head' },
+      el('strong', {}, 'Claude Code'),
+      a ? agentBadge(a) : el('span', { class: 'muted' }, 'no agent yet'),
+      a ? el('button', { class: 'badge action', title: 'Copy branch name', onclick: () => copy(a.branch, 'branch') }, el('code', {}, a.branch)) : null,
+      a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
+    actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
+    last,
+    review,
+    changes ? el('details', { class: 'changes', open: t.status === 'ready-for-review' },
+      el('summary', {}, `${changes.commits.length} commit${changes.commits.length === 1 ? '' : 's'}${changes.dirty ? ' · uncommitted changes' : ''}`),
+      changes.commits.length ? el('pre', {}, changes.commits.join('\n')) : null,
+      changes.stat ? el('pre', {}, changes.stat) : null) : null,
+    d?.items.length ? el('details', { class: 'activity', open: busy },
+      el('summary', {}, 'Agent activity'),
+      el('ol', {}, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
 }
 
 function toast(msg) {
@@ -348,6 +492,12 @@ $('unblockedOnly').addEventListener('change', e => { state.unblockedOnly = e.tar
 $('drawerClose').addEventListener('click', closeTicket);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && state.ticket) closeTicket();
+  const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
+  if (e.key === 'c' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const t = state.ticket && findTicket(state.ticket);
+    const next = t && (nextCommand(t) || { text: implementCommand(t), what: '/implement command' });
+    if (next) copy(next.text, next.what);
+  }
   if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('search').focus(); }
 });
 window.addEventListener('hashchange', () => { readHash(); if (state.data) { renderFeatureSelect(); render(); } });
