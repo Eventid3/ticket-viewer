@@ -30,12 +30,12 @@ Options:
       --lanes <list>         Comma-separated lane order (default ${DEFAULT_LANES.join(',')})
       --no-open              Don't open a browser
       --claude <cmd>         Claude Code executable for background agents (default claude)
-      --permission-mode <m>  Permission mode for background agents (default acceptEdits)
+      --permission-mode <m>  Permission mode for background agents (default auto)
       --difftool <tool>      git difftool used to review a ticket's changes (default meld)
   -h, --help                 Show this help`;
 
 function parseArgs(argv) {
-  const opts = { dir: null, port: 4777, open: true, lanes: DEFAULT_LANES, claude: 'claude', permissionMode: 'acceptEdits', difftool: 'meld' };
+  const opts = { dir: null, port: 4777, open: true, lanes: DEFAULT_LANES, claude: 'claude', permissionMode: 'auto', difftool: 'meld' };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h' || a === '--help') { console.log(USAGE); process.exit(0); }

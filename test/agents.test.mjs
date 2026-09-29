@@ -61,7 +61,7 @@ test('starts /implement as a background session in a worktree inside the repo', 
   const { args, cwd } = cli.calls[0];
   assert.equal(cwd, r.worktree);
   assert.match(args[0], new RegExp(`^/implement ${ticket}\\n`));
-  assert.deepEqual(args.slice(1), ['-n', 'ticket 01-a', '--permission-mode', 'acceptEdits', '--add-dir', path.dirname(ticket)]);
+  assert.deepEqual(args.slice(1), ['-n', 'ticket 01-a', '--permission-mode', 'auto', '--add-dir', path.dirname(ticket)]);
 });
 
 test('follows the session: waiting on you, replying, then done once it has committed', async () => {

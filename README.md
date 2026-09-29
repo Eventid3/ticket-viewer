@@ -39,7 +39,7 @@ The board can run Claude Code for you, as Claude Code background sessions (`clau
 
 **Stop agent** stops the session. **Continue agent** resumes it in the background and tells it to carry on. Sessions belong to Claude Code, not to the board: they keep running if you close the board, and the board picks them up again when it starts. The board's records are in `.git/ticket-viewer/agents.json`.
 
-Sessions start with `--permission-mode acceptEdits`, so file edits are allowed and anything else that isn't in your allowlist asks for permission. To get fewer prompts, allow the commands your agents need (test runner, `git add`, `git commit`) in the project's `.claude/settings.json`, or answer with "Yes, and don't ask again" when you attach.
+Sessions start in auto mode (`--permission-mode auto`): Claude Code's classifier approves routine actions, so the agent rarely stops to ask, and it still asks before risky ones. For more control, start the board with `--permission-mode acceptEdits`. Then only file edits are automatic, and anything not in your allowlist waits for you to attach and answer.
 
 Options: `--claude <cmd>`, `--permission-mode <mode>`, `--difftool <tool>` (any `git difftool` tool name).
 
