@@ -91,10 +91,14 @@ function wantsStructure(t) { return !!(state.data.codemap && t?.status === 'read
 async function loadStructure(id, rendering = false) {
   state.structure = { ...(state.structure?.id === id ? state.structure : {}), id, loading: true, error: null };
   if (!rendering) renderAgent();
-  const res = await fetch(`/api/codemap/summary?id=${encodeURIComponent(id)}`).catch(e => ({ ok: false, json: async () => ({ error: e.message }) }));
-  const body = await res.json().catch(() => ({}));
+  let result;
+  try {
+    const res = await fetch(`/api/codemap/summary?id=${encodeURIComponent(id)}`);
+    const body = await res.json().catch(() => ({}));
+    result = res.ok ? { summary: body } : { error: body.error || `Request failed (${res.status})` };
+  } catch (e) { result = { error: e.message }; }
   if (state.structure?.id !== id) return; // another ticket was opened meanwhile
-  Object.assign(state.structure, { loading: false }, res.ok ? { summary: body } : { error: body.error || `Request failed (${res.status})` });
+  Object.assign(state.structure, { loading: false }, result);
   renderAgent();
 }
 
@@ -362,7 +366,6 @@ function renderAgent() {
   const d = state.detail?.id === t?.id ? state.detail : null;
   if (!t || (!a && t.status !== 'ready-for-agent')) { box.hidden = true; return; }
   box.hidden = false;
-  const btn = (text, attrs, onclick) => el('button', { class: 'btn', ...attrs, onclick }, text);
 
   const busy = agentBusy(a);
   const actions = [];
@@ -437,13 +440,14 @@ function renderStructure(t, notes) {
   const st = state.structure?.id === t.id ? state.structure : {};
   const s = st.summary;
   const copyNotes = () => {
-    const text = s.notes.map(n => `- ${n}`).join('\n');
     const current = notes.value.trim();
-    if (current.includes(text)) return toast('The flagged notes are already in your notes');
+    const missing = s.notes.filter(n => !current.includes(n));
+    if (!missing.length) return toast('The flagged notes are already in your notes');
+    const text = missing.map(n => `- ${n}`).join('\n');
     notes.value = current ? `${current}\n\n${text}` : text;
     state.notes[t.id] = notes.value;
     notes.focus();
-    toast(`Copied ${s.notes.length} flagged note${s.notes.length === 1 ? '' : 's'} into the notes`);
+    toast(`Copied ${plural(missing.length, 'flagged note')} into the notes`);
   };
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   return el('div', { class: 'structure' },
@@ -464,9 +468,9 @@ function renderStructure(t, notes) {
       btn(`⇣ Copy ${plural(s.notes.length, 'flagged note')} to Send back`, {
         disabled: !s.notes.length, title: s.notes.length ? 'Add the flagged items to the review notes below' : 'Flag items in the structure diff to get notes here',
       }, copyNotes)) : null);
-
-  function btn(text, attrs, onclick) { return el('button', { class: 'btn', ...attrs, onclick }, text); }
 }
+
+function btn(text, attrs, onclick) { return el('button', { class: 'btn', ...attrs, onclick }, text); }
 
 function toast(msg) {
   const t = $('toast');
