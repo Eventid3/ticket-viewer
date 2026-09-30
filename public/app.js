@@ -6,7 +6,7 @@ const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-fo
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
 const $ = id => document.getElementById(id);
-const state = { data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false, detail: null, dragging: null };
+const state = { data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false, detail: null, dragging: null, structure: null, notes: {} };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
@@ -53,12 +53,18 @@ function canMove(t, to) {
   return !(to === 'claimed' && (t.blocked || !state.data.agents));
 }
 
-async function api(path, body) {
+// Null when the request worked, otherwise the error to show.
+async function post(path, body) {
   const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (res.ok) return true;
+  if (res.ok) return null;
   const err = await res.json().catch(() => ({}));
-  toast(err.error || `Request failed (${res.status})`);
-  return false;
+  return err.error || `Request failed (${res.status})`;
+}
+
+async function api(path, body) {
+  const error = await post(path, body);
+  if (error) toast(error);
+  return !error;
 }
 
 async function moveTicket(t, to, notes) {
@@ -76,6 +82,32 @@ async function loadDetail() {
   state.detail = res.ok ? { id: t.id, ...(await res.json()) } : null;
   renderAgent();
   if (agentBusy(state.detail?.record)) loadDetail.timer = setTimeout(loadDetail, 3000);
+}
+
+// codemap's structure diff for a ticket in review: counts per group and flagged entries, loaded on demand.
+function wantsStructure(t) { return !!(state.data.codemap && t?.status === 'ready-for-review' && agentOf(t)); }
+
+// `rendering`: called from renderAgent, which draws the loading state itself.
+async function loadStructure(id, rendering = false) {
+  state.structure = { ...(state.structure?.id === id ? state.structure : {}), id, loading: true, error: null };
+  if (!rendering) renderAgent();
+  const res = await fetch(`/api/codemap/summary?id=${encodeURIComponent(id)}`).catch(e => ({ ok: false, json: async () => ({ error: e.message }) }));
+  const body = await res.json().catch(() => ({}));
+  if (state.structure?.id !== id) return; // another ticket was opened meanwhile
+  Object.assign(state.structure, { loading: false }, res.ok ? { summary: body } : { error: body.error || `Request failed (${res.status})` });
+  renderAgent();
+}
+
+async function openStructureDiff(t) {
+  if (state.structure?.id !== t.id) return;
+  Object.assign(state.structure, { opening: true, viewError: null });
+  renderAgent();
+  toast('Opening structure diff…');
+  const error = await post('/api/codemap/view', { id: t.id });
+  if (state.structure?.id !== t.id) return;
+  Object.assign(state.structure, { opening: false, viewError: error });
+  if (error) toast(`Could not open structure diff: ${error}`);
+  renderAgent();
 }
 
 function currentTickets() {
@@ -267,6 +299,7 @@ function agentBadge(a) {
 function openTicket(id) {
   state.ticket = id;
   state.detail = null;
+  state.structure = null;
   writeHash();
   render();
   loadDetail();
@@ -274,6 +307,7 @@ function openTicket(id) {
 function closeTicket() {
   state.ticket = null;
   state.detail = null;
+  state.structure = null;
   writeHash();
   render();
 }
@@ -344,19 +378,33 @@ function renderAgent() {
     actions.push(btn('Back to ready-for-agent', {}, () => moveTicket(t, 'ready-for-agent')));
   }
 
+  // Loaded afresh each time the ticket comes (back) into review.
+  if (!wantsStructure(t) && state.structure?.id === t.id) state.structure = null;
   let review = null;
   if (t.status === 'ready-for-review' && a) {
-    const notes = el('textarea', { class: 'notes', rows: 3, placeholder: 'Review notes: sent to the agent\'s session and added to the ticket\'s ## Comments' });
+    // Kept in state, so the board's live reloads don't wipe what you've written.
+    const notes = el('textarea', {
+      class: 'notes', rows: 3, placeholder: 'Review notes: sent to the agent\'s session and added to the ticket\'s ## Comments',
+      oninput: e => { state.notes[t.id] = e.target.value; },
+    });
+    notes.value = state.notes[t.id] || '';
+    const structure = wantsStructure(t);
+    if (structure && state.structure?.id !== t.id) loadStructure(t.id, true);
     review = el('div', { class: 'review' },
       el('div', { class: 'agent-actions' },
         btn('⇆ Open diff in meld', { class: 'btn primary', title: `git difftool -d ${a.base.slice(0, 8)} in the worktree` }, () => api('/api/agent/diff', { id: t.id })),
+        structure ? btn(state.structure?.opening ? '⌗ Opening structure diff…' : '⌗ Open structure diff', {
+          class: 'btn primary', disabled: !!state.structure?.opening,
+          title: `codemap view: the structural changes since ${a.base.slice(0, 8)}, to mark OK or Flag`,
+        }, () => openStructureDiff(t)) : null,
         btn('✓ Approve', { title: 'Mark resolved, stop the session and copy the merge command' }, async () => {
           if (await moveTicket(t, 'resolved')) copy(mergeCommand(a), 'merge command');
         }),
         btn('↩ Send back to agent', { title: 'Resume the agent\'s session with your notes' }, () => {
           if (!notes.value.trim()) return toast('Write what should change first');
-          moveTicket(t, 'claimed', notes.value.trim());
+          moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
         })),
+      structure ? renderStructure(t, notes) : null,
       notes);
   }
 
@@ -382,6 +430,42 @@ function renderAgent() {
     d?.items.length ? el('details', { class: 'activity', open: busy },
       el('summary', {}, 'Agent activity'),
       el('ol', {}, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
+}
+
+// The review panel's codemap section: counts per review-list group, flagged entries, and copying their notes.
+function renderStructure(t, notes) {
+  const st = state.structure?.id === t.id ? state.structure : {};
+  const s = st.summary;
+  const copyNotes = () => {
+    const text = s.notes.map(n => `- ${n}`).join('\n');
+    const current = notes.value.trim();
+    if (current.includes(text)) return toast('The flagged notes are already in your notes');
+    notes.value = current ? `${current}\n\n${text}` : text;
+    state.notes[t.id] = notes.value;
+    notes.focus();
+    toast(`Copied ${s.notes.length} flagged note${s.notes.length === 1 ? '' : 's'} into the notes`);
+  };
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  return el('div', { class: 'structure' },
+    el('div', { class: 'agent-head' },
+      el('strong', {}, 'Structure diff'),
+      st.loading ? el('span', { class: 'muted' }, s ? 'refreshing…' : 'computing… (the first run extracts both snapshots)') : null,
+      s && !st.loading && s.groups.length ? el('span', { class: 'muted' }, s.unmarked ? `${plural(s.unmarked, 'item')} not marked yet` : 'all marked') : null,
+      el('button', { class: 'icon-btn', title: 'Refresh the summary, e.g. after marking items in codemap', disabled: !!st.loading, onclick: () => loadStructure(t.id) }, '↻')),
+    st.viewError ? el('div', { class: 'error-text' }, `Could not open structure diff: ${st.viewError}`) : null,
+    st.error ? el('div', { class: 'error-text' }, `Could not get the codemap summary: ${st.error}`) : null,
+    s ? el('div', { class: 'structure-groups' },
+      s.groups.length
+        ? s.groups.map(g => el('span', { class: 'badge' + (g.kind === 'other-change' ? '' : ' structural') }, `${g.label}: ${g.count}`))
+        : el('span', { class: 'muted' }, 'No structural changes')) : null,
+    s?.warning ? el('div', { class: 'badge needs-you' }, s.warning) : null,
+    s?.flagged.length ? el('ul', { class: 'flagged' }, s.flagged.map(f => el('li', { title: f.title }, f.note))) : null,
+    s ? el('div', { class: 'agent-actions' },
+      btn(`⇣ Copy ${plural(s.notes.length, 'flagged note')} to Send back`, {
+        disabled: !s.notes.length, title: s.notes.length ? 'Add the flagged items to the review notes below' : 'Flag items in the structure diff to get notes here',
+      }, copyNotes)) : null);
+
+  function btn(text, attrs, onclick) { return el('button', { class: 'btn', ...attrs, onclick }, text); }
 }
 
 function toast(msg) {
@@ -500,6 +584,13 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('search').focus(); }
 });
+// Coming back from the codemap tab: pick up the items you marked there.
+function refreshStructure() {
+  const t = state.ticket && findTicket(state.ticket);
+  if (document.visibilityState === 'visible' && state.structure?.id === t?.id && !state.structure.loading && wantsStructure(t)) loadStructure(t.id);
+}
+window.addEventListener('focus', refreshStructure);
+document.addEventListener('visibilitychange', refreshStructure);
 window.addEventListener('hashchange', () => { readHash(); if (state.data) { renderFeatureSelect(); render(); } });
 
 loadPrefs();

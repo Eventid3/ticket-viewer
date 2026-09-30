@@ -64,6 +64,23 @@ test('starts /implement as a background session in a worktree inside the repo', 
   assert.deepEqual(args.slice(1), ['-n', 'ticket 01-a', '--permission-mode', 'auto', '--add-dir', path.dirname(ticket)]);
 });
 
+test('calls onWorktree with the worktree and base once the worktree exists, before the session starts', async () => {
+  const { repo, cli, ticket } = setup();
+  const seen = [];
+  const agents = createAgents({
+    scratchRoot: path.join(repo, '.scratch'), cli,
+    onWorktree: (worktree, base) => seen.push({ worktree, base, exists: fs.existsSync(worktree), sessions: cli.calls.length }),
+  });
+  const r = await agents.start(ID, ticket);
+  assert.deepEqual(seen, [{ worktree: r.worktree, base: git(repo, 'rev-parse', 'HEAD'), exists: true, sessions: 0 }]);
+});
+
+test('a throwing onWorktree does not stop the agent from starting', async () => {
+  const { repo, cli, ticket } = setup();
+  const agents = createAgents({ scratchRoot: path.join(repo, '.scratch'), cli, onWorktree: () => { throw new Error('boom'); } });
+  assert.equal((await agents.start(ID, ticket)).state, 'running');
+});
+
 test('follows the session: waiting on you, replying, then done once it has committed', async () => {
   const { cli, agents, changes, ticket } = setup();
   const r = await agents.start(ID, ticket);
