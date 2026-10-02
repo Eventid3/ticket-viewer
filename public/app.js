@@ -71,10 +71,10 @@ async function moveTicket(t, to, notes) {
 async function loadDetail() {
   clearTimeout(loadDetail.timer);
   const t = state.ticket && findTicket(state.ticket);
-  if (!t || !agentOf(t)) { state.detail = null; renderAgent(); return; }
+  if (!t || !agentOf(t)) { state.detail = null; keepDrawerView(renderAgent); return; }
   const res = await fetch(`/api/agent?id=${encodeURIComponent(t.id)}`);
   state.detail = res.ok ? { id: t.id, ...(await res.json()) } : null;
-  renderAgent();
+  keepDrawerView(renderAgent);
   if (agentBusy(state.detail?.record)) loadDetail.timer = setTimeout(loadDetail, 3000);
 }
 
@@ -190,7 +190,7 @@ function render() {
   const done = all.filter(t => DONE.has(t.status)).length;
   const blocked = all.filter(t => t.blocked).length;
   $('stats').textContent = `${visible.length}/${all.length} shown · ${done} done · ${blocked} blocked`;
-  renderDrawer();
+  keepDrawerView(renderDrawer);
 }
 
 function renderLane(status, cards) {
@@ -278,6 +278,49 @@ function closeTicket() {
   render();
 }
 
+// Live updates rebuild the drawer, so the scroll offsets and open/closed sections it was left with
+// (elements marked data-keep) are read before each render and put back after. Opening another
+// ticket starts over, so its defaults apply.
+let drawerView = { open: {}, scroll: {} };
+function keepDrawerView(draw) {
+  const drawer = $('drawer');
+  if (state.ticket && drawer.dataset.ticket === state.ticket) saveView(drawer);
+  else drawerView = { open: {}, scroll: {} };
+  draw();
+  if (drawer.hidden) { delete drawer.dataset.ticket; return; }
+  restoreView(drawer);
+  drawer.dataset.ticket = state.ticket;
+}
+
+// The root goes last: opening sections first gives it the height to scroll back to.
+function keptNodes(root) { return [...root.querySelectorAll('[data-keep]'), root]; }
+
+function saveView(root) {
+  for (const n of keptNodes(root)) {
+    const k = n.dataset.keep;
+    if (n.tagName === 'DETAILS') drawerView.open[k] = n.open;
+    // A closed section has no layout, so leave its last known offset alone.
+    else if (n.clientHeight) drawerView.scroll[k] = { top: n.scrollTop, atBottom: n.scrollHeight - n.scrollTop - n.clientHeight < 4 };
+  }
+}
+
+function restoreView(root) {
+  for (const n of keptNodes(root)) {
+    const k = n.dataset.keep;
+    if (n.tagName === 'DETAILS') {
+      if (k in drawerView.open) n.open = drawerView.open[k];
+      // Scrolling a closed section does nothing, so put its offsets back once it's opened.
+      n.ontoggle = () => { if (n.open) n.querySelectorAll('[data-keep]').forEach(restoreScroll); };
+    } else restoreScroll(n);
+  }
+}
+
+function restoreScroll(n) {
+  const s = drawerView.scroll[n.dataset.keep];
+  // data-follow lists stay pinned to the bottom as items arrive, like a terminal.
+  n.scrollTop = !s ? 0 : s.atBottom && 'follow' in n.dataset ? n.scrollHeight : s.top;
+}
+
 function renderDrawer() {
   const drawer = $('drawer');
   const t = state.ticket && findTicket(state.ticket);
@@ -362,9 +405,9 @@ function renderAgent() {
 
   const pending = a?.state === 'waiting' && d?.items.at(-1)?.kind === 'tool' ? d.items.at(-1).text : null;
   const last = pending
-    ? el('div', { class: 'last-message' }, el('strong', {}, 'Waiting to run: '), el('code', {}, pending), el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`))
+    ? el('div', { class: 'last-message', 'data-keep': 'pending' }, el('strong', {}, 'Waiting to run: '), el('code', {}, pending), el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`))
     : d?.lastMessage && ['idle', 'done', 'stopped'].includes(a?.state)
-      ? el('blockquote', { class: 'last-message', title: 'The agent\'s last message' }, d.lastMessage) : null;
+      ? el('blockquote', { class: 'last-message', 'data-keep': 'last-message', title: 'The agent\'s last message' }, d.lastMessage) : null;
   const changes = d?.changes;
   fill(box,
     el('div', { class: 'agent-head' },
@@ -375,13 +418,13 @@ function renderAgent() {
     actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
     last,
     review,
-    changes ? el('details', { class: 'changes', open: t.status === 'ready-for-review' },
+    changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
       el('summary', {}, `${changes.commits.length} commit${changes.commits.length === 1 ? '' : 's'}${changes.dirty ? ' · uncommitted changes' : ''}`),
       changes.commits.length ? el('pre', {}, changes.commits.join('\n')) : null,
       changes.stat ? el('pre', {}, changes.stat) : null) : null,
-    d?.items.length ? el('details', { class: 'activity', open: busy },
+    d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: busy },
       el('summary', {}, 'Agent activity'),
-      el('ol', {}, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
+      el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
 }
 
 function toast(msg) {
