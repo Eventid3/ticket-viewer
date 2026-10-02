@@ -22,6 +22,7 @@
   --s-resolved: #2e8a57;
   --s-wontfix: #b0b4c0;
   --s-other: #6b7280;
+  --drawer-w: min(640px, 100vw);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -117,9 +118,14 @@ body {
 .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 10px 0; }
 
 .drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); background: var(--surface);
+  position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-w); background: var(--surface);
   border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgba(0, 0, 0, .12); overflow-y: auto;
   padding: 16px 22px 40px; z-index: 10;
+}
+/* On wide screens, reserve the drawer's width at the board's right end so every lane can be scrolled clear of it,
+   and so scrollIntoView keeps the selected card out from under it. Narrow screens keep the drawer as a plain overlay. */
+@media (min-width: 900px) {
+  body:has(> .drawer:not([hidden])) .board { padding-right: calc(var(--drawer-w) + 16px); scroll-padding-right: calc(var(--drawer-w) + 16px); }
 }
 .drawer-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
 .drawer-head h2 { margin: 4px 0 8px; font-size: 19px; }
