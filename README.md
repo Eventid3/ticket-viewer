@@ -60,7 +60,9 @@ Cards can only be dragged to those lanes. Every other change, such as triage dec
 - The detail panel has **Copy /implement**, **Copy /triage**, and a **Move via /triage…** menu that copies `/triage move <path> to <state>`.
 - Press `c` while a ticket is open to copy its next step (`/implement` when there is none).
 
-Click the file path in the detail panel to copy just the path. Paths are relative to the repo root (the folder that contains `.scratch/`). Start the agent there.
+Paths in these commands are relative to the repo root (the folder that contains `.scratch/`). Start the agent there.
+
+Under the ticket title, the detail panel has up to three rows: the tickets it's blocked by and blocks, the copy commands above, and the ticket's path. The path is shown relative to the repo root, but clicking it copies the absolute path. When the ticket has an agent, **Copy worktree** next to it copies `cd <absolute worktree path>`, for jumping into the worktree from a terminal. The branch name in the Claude Code section copies the branch.
 
 ## Parsing rules
 

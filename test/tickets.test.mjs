@@ -81,6 +81,7 @@ test('loadFeature marks tickets blocked until blockers are done', () => {
   assert.deepEqual(byNum['04'].openBlockers, ['02']);
   assert.deepEqual(byNum['01'].blocks, ['03', '04']);
   assert.equal(byNum['01'].path, '.scratch/feat/issues/01-a.md');
+  assert.equal(byNum['01'].absPath, path.join(issues, '01-a.md'));
 
   // A feature folder can be passed directly, too.
   const single = resolveFeatures(path.join(root, '.scratch', 'feat')).features;

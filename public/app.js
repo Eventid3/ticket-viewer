@@ -329,7 +329,7 @@ function renderDrawer() {
 
   // Picking a state copies a /triage command, so the agent makes the move (and writes the brief).
   const moveSel = el('select', {
-    'aria-label': 'Move via /triage',
+    class: 'badge action', 'aria-label': 'Move via /triage',
     onchange: e => { const to = e.target.value; e.target.value = ''; if (to) copy(triageCommand(t, to), '/triage command'); },
   },
     el('option', { value: '' }, 'Move via /triage…'),
@@ -351,13 +351,20 @@ function renderDrawer() {
       onclick: () => o && openTicket(o.id),
     }, `#${n}`);
   };
+  const a = agentOf(t);
+  const action = (text, title, onclick) => el('button', { class: 'badge action', title, onclick }, text);
   fill($('drawerLinks'),
-    t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
-    t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link),
-    el('button', { class: 'badge action', title: `Copy "${implementCommand(t)}"`, onclick: () => copy(implementCommand(t), '/implement command') }, '⧉ Copy /implement'),
-    el('button', { class: 'badge action', title: `Copy "${triageCommand(t)}"`, onclick: () => copy(triageCommand(t), '/triage command') }, '⧉ Copy /triage'),
-    moveSel,
-    el('button', { class: 'badge action', title: 'Copy file path', onclick: () => copy(t.path, 'path') }, el('code', {}, t.path)));
+    t.blockedBy.length || t.blocks.length ? el('div', { class: 'links-row' },
+      t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
+      t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null,
+    el('div', { class: 'links-row' },
+      el('div', { class: 'action-group', role: 'group', 'aria-label': 'Commands' },
+        action('⧉ Copy /implement', `Copy "${implementCommand(t)}"`, () => copy(implementCommand(t), '/implement command')),
+        action('⧉ Copy /triage', `Copy "${triageCommand(t)}"`, () => copy(triageCommand(t), '/triage command')),
+        moveSel)),
+    el('div', { class: 'links-row' },
+      action(el('code', {}, t.path), `Copy the absolute path: ${t.absPath}`, () => copy(t.absPath, 'absolute path')),
+      a?.worktree ? action('⧉ Copy worktree', `Copy "cd ${a.worktree}"`, () => copy(`cd ${a.worktree}`, 'worktree command')) : null));
   renderAgent();
   $('drawerBody').innerHTML = renderMarkdown(t.body);
   document.querySelectorAll('.card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
