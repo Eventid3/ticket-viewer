@@ -533,6 +533,9 @@ $('search').addEventListener('input', e => { state.query = e.target.value.trim()
 $('hideEmpty').addEventListener('change', e => { state.hideEmpty = e.target.checked; savePrefs(); render(); });
 $('unblockedOnly').addEventListener('change', e => { state.unblockedOnly = e.target.checked; savePrefs(); render(); });
 $('drawerClose').addEventListener('click', closeTicket);
+// The drawer covers the board's right edge, where the browser would auto-scroll during a drag,
+// so dragging a card over the drawer scrolls the board on toward the lanes behind it.
+$('drawer').addEventListener('dragover', () => { if (state.dragging) $('board').scrollLeft += 20; });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && state.ticket) closeTicket();
   const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
