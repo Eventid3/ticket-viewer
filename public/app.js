@@ -108,6 +108,7 @@ const TRIAGE_STATES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-f
 
 function implementCommand(t) { return `/implement ${t.path}`; }
 function attachCommand(a) { return `claude attach ${a.bgId}`; }
+function worktreeCommand(a) { return `cd ${a.worktree}`; }
 function mergeCommand(a) { return `git merge ${a.branch} && git worktree remove ${a.worktree} && git branch -d ${a.branch}`; }
 function triageCommand(t, to) { return to ? `/triage move ${t.path} to ${to}` : `/triage ${t.path}`; }
 
@@ -136,6 +137,11 @@ async function copy(text, what) {
 }
 
 // ---- rendering --------------------------------------------------------------------------
+// A small button that copies `text`; its tooltip shows exactly what gets copied.
+function badgeButton(content, text, what) {
+  return el('button', { class: 'badge action', title: `Copy "${text}"`, onclick: () => copy(text, what) }, content);
+}
+
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -332,7 +338,7 @@ function renderDrawer() {
     class: 'badge action', 'aria-label': 'Move via /triage',
     onchange: e => { const to = e.target.value; e.target.value = ''; if (to) copy(triageCommand(t, to), '/triage command'); },
   },
-    el('option', { value: '' }, 'Move via /triage…'),
+    el('option', { value: '' }, 'Move via /triage… ▾'),
     TRIAGE_STATES.filter(s => s !== t.status).map(s => el('option', { value: s }, `→ ${s}`)));
 
   fill($('drawerMeta'),
@@ -352,19 +358,17 @@ function renderDrawer() {
     }, `#${n}`);
   };
   const a = agentOf(t);
-  const action = (text, title, onclick) => el('button', { class: 'badge action', title, onclick }, text);
   fill($('drawerLinks'),
     t.blockedBy.length || t.blocks.length ? el('div', { class: 'links-row' },
       t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
       t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null,
+    el('div', { class: 'links-row action-group', role: 'group', 'aria-label': 'Commands' },
+      badgeButton('⧉ Copy /implement', implementCommand(t), '/implement command'),
+      badgeButton('⧉ Copy /triage', triageCommand(t), '/triage command'),
+      moveSel),
     el('div', { class: 'links-row' },
-      el('div', { class: 'action-group', role: 'group', 'aria-label': 'Commands' },
-        action('⧉ Copy /implement', `Copy "${implementCommand(t)}"`, () => copy(implementCommand(t), '/implement command')),
-        action('⧉ Copy /triage', `Copy "${triageCommand(t)}"`, () => copy(triageCommand(t), '/triage command')),
-        moveSel)),
-    el('div', { class: 'links-row' },
-      action(el('code', {}, t.path), `Copy the absolute path: ${t.absPath}`, () => copy(t.absPath, 'absolute path')),
-      a?.worktree ? action('⧉ Copy worktree', `Copy "cd ${a.worktree}"`, () => copy(`cd ${a.worktree}`, 'worktree command')) : null));
+      badgeButton(el('code', {}, t.path), t.absPath, 'absolute path'),
+      a?.worktree ? badgeButton('⧉ Copy worktree', worktreeCommand(a), 'worktree command') : null));
   renderAgent();
   $('drawerBody').innerHTML = renderMarkdown(t.body);
   document.querySelectorAll('.card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
@@ -420,7 +424,7 @@ function renderAgent() {
     el('div', { class: 'agent-head' },
       el('strong', {}, 'Claude Code'),
       a ? agentBadge(a) : el('span', { class: 'muted' }, 'no agent yet'),
-      a ? el('button', { class: 'badge action', title: 'Copy branch name', onclick: () => copy(a.branch, 'branch') }, el('code', {}, a.branch)) : null,
+      a ? badgeButton(el('code', {}, a.branch), a.branch, 'branch') : null,
       a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
     actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
     last,
