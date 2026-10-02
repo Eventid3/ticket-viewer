@@ -392,7 +392,9 @@ function renderAgent() {
     const verb = a?.sessionId ? '▶ Continue agent' : '▶ Start agent';
     actions.push(btn(verb, { class: 'btn primary', disabled: !!why, title: why || 'Claim the ticket and run /implement as a background session' }, () => moveTicket(t, 'claimed')));
   }
-  if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${a.state === 'waiting' || a.state === 'idle' ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
+  // Start/Continue and meld are the next step in their lanes; otherwise attaching is, when the agent needs you.
+  const needsYou = (a?.state === 'waiting' || a?.state === 'idle') && !['ready-for-agent', 'ready-for-review'].includes(t.status);
+  if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${needsYou ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
   if (a?.bgId && a.state !== 'stopped' && a.state !== 'failed') actions.push(btn('■ Stop agent', { title: 'Stop the session; its conversation is kept' }, () => api('/api/agent/stop', { id: t.id })));
   if (t.status === 'claimed' && a && !busy) {
     actions.push(btn('↻ Continue agent', { title: 'Resume the session in the background and tell it to carry on' }, () => api('/api/agent/start', { id: t.id })));
@@ -419,7 +421,8 @@ function renderAgent() {
   const last = pending
     ? el('div', { class: 'last-message', 'data-keep': 'pending' }, el('strong', {}, 'Waiting to run: '), el('code', {}, pending), el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`))
     : d?.lastMessage && ['idle', 'done', 'stopped'].includes(a?.state)
-      ? markdownBox(el('div', { class: 'last-message markdown', 'data-keep': 'last-message', title: 'The agent\'s last message' }), d.lastMessage) : null;
+      ? el('div', { class: 'last-message markdown', 'data-keep': 'last-message', title: 'The agent\'s last message' }) : null;
+  if (last && !pending) last.innerHTML = renderMarkdown(d.lastMessage);
   const changes = d?.changes;
   fill(box,
     el('div', { class: 'agent-head' },
@@ -437,11 +440,6 @@ function renderAgent() {
     d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: busy },
       el('summary', {}, 'Agent activity'),
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
-}
-
-function markdownBox(node, md) {
-  node.innerHTML = renderMarkdown(md);
-  return node;
 }
 
 function toast(msg) {
