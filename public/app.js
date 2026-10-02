@@ -259,14 +259,15 @@ function renderCard(t) {
 }
 
 function agentBadge(a) {
+  const badge = (state, attrs, text) => el('span', { class: `badge agent-state ${state}`, ...attrs }, text);
   switch (a.state) {
-    case 'starting': return el('span', { class: 'badge agent running' }, '● agent starting');
-    case 'running': return el('span', { class: 'badge agent running', title: `Working on ${a.branch}` }, '● agent running');
-    case 'waiting': return el('span', { class: 'badge needs-you', title: `Attach to answer: ${attachCommand(a)}` }, `⚠ needs you: ${a.waitingFor}`);
-    case 'idle': return el('span', { class: 'badge needs-you', title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 agent is waiting for a reply');
-    case 'done': return el('span', { class: 'badge agent', title: a.branch }, '✓ agent done');
-    case 'failed': return el('span', { class: 'badge blocked', title: a.error || '' }, '✕ agent failed to start');
-    default: return el('span', { class: 'badge', title: 'The session is not running; attaching reopens it' }, '■ agent stopped');
+    case 'starting': return badge('running', {}, '● agent starting');
+    case 'running': return badge('running', { title: `Working on ${a.branch}` }, '● agent running');
+    case 'waiting': return badge('waiting', { title: `Attach to answer: ${attachCommand(a)}` }, `⚠ needs you: ${a.waitingFor}`);
+    case 'idle': return badge('idle', { title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 agent is waiting for a reply');
+    case 'done': return badge('done', { title: a.branch }, '✓ agent done');
+    case 'failed': return badge('failed', { title: a.error || '' }, '✕ agent failed to start');
+    default: return badge('stopped', { title: 'The session is not running; attaching reopens it' }, '■ agent stopped');
   }
 }
 
@@ -418,7 +419,7 @@ function renderAgent() {
   const last = pending
     ? el('div', { class: 'last-message', 'data-keep': 'pending' }, el('strong', {}, 'Waiting to run: '), el('code', {}, pending), el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`))
     : d?.lastMessage && ['idle', 'done', 'stopped'].includes(a?.state)
-      ? el('blockquote', { class: 'last-message', 'data-keep': 'last-message', title: 'The agent\'s last message' }, d.lastMessage) : null;
+      ? markdownBox(el('div', { class: 'last-message markdown', 'data-keep': 'last-message', title: 'The agent\'s last message' }), d.lastMessage) : null;
   const changes = d?.changes;
   fill(box,
     el('div', { class: 'agent-head' },
@@ -431,11 +432,16 @@ function renderAgent() {
     review,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
       el('summary', {}, `${changes.commits.length} commit${changes.commits.length === 1 ? '' : 's'}${changes.dirty ? ' · uncommitted changes' : ''}`),
-      changes.commits.length ? el('pre', {}, changes.commits.join('\n')) : null,
+      changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
       changes.stat ? el('pre', {}, changes.stat) : null) : null,
     d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: busy },
       el('summary', {}, 'Agent activity'),
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
+}
+
+function markdownBox(node, md) {
+  node.innerHTML = renderMarkdown(md);
+  return node;
 }
 
 function toast(msg) {

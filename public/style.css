@@ -22,6 +22,8 @@
   --s-resolved: #2e8a57;
   --s-wontfix: #b0b4c0;
   --s-other: #6b7280;
+  /* Filled agent state badges (agentBadge in app.js). --a-text sits on all of them. */
+  --a-running: #17808e; --a-waiting: #a15c00; --a-idle: #7c3fc9; --a-done: #2e8a57; --a-failed: #c93b3b; --a-stopped: #646a7d; --a-text: #fff;
   --drawer-width: min(640px, 100vw);
   color-scheme: light;
 }
@@ -29,12 +31,14 @@
   :root:not([data-theme="light"]) {
     --bg: #14161c; --surface: #1f222b; --lane: #191c23; --text: #e6e8ee; --muted: #9aa0b2;
     --border: #2e323d; --accent: #7b91ff; --danger: #ef7777; --danger-bg: #3a2024; --ok: #5fc98d; --ok-bg: #1d3327; --warn: #f0b35a; --warn-bg: #3a2c17;
+    --a-running: #4cc3d1; --a-waiting: #f0b35a; --a-idle: #b48cf0; --a-done: #5fc98d; --a-failed: #ef7777; --a-stopped: #9aa0b2; --a-text: #14161c;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4); color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #14161c; --surface: #1f222b; --lane: #191c23; --text: #e6e8ee; --muted: #9aa0b2;
   --border: #2e323d; --accent: #7b91ff; --danger: #ef7777; --danger-bg: #3a2024; --ok: #5fc98d; --ok-bg: #1d3327; --warn: #f0b35a; --warn-bg: #3a2c17;
+  --a-running: #4cc3d1; --a-waiting: #f0b35a; --a-idle: #b48cf0; --a-done: #5fc98d; --a-failed: #ef7777; --a-stopped: #9aa0b2; --a-text: #14161c;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4); color-scheme: dark;
 }
 
@@ -173,29 +177,42 @@ body {
   .stats { margin-left: 0; }
 }
 
-.badge.agent { border-color: var(--s-claimed); color: var(--s-claimed); }
-.badge.needs-you { background: var(--warn-bg); color: var(--warn); border-color: transparent; white-space: normal; }
-.last-message { margin: 0; padding: 6px 10px; border-left: 3px solid var(--border); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow-y: auto; }
-.badge.agent.running { animation: pulse 1.6s ease-in-out infinite; }
+/* Agent state badges: one filled colour per state, so the state reads at a glance on cards and in the drawer. */
+.badge.agent-state { border-color: transparent; color: var(--a-text); font-weight: 500; }
+.badge.agent-state.running { background: var(--a-running); }
+.badge.agent-state.waiting { background: var(--a-waiting); }
+.badge.agent-state.idle { background: var(--a-idle); }
+.badge.agent-state.done { background: var(--a-done); }
+.badge.agent-state.failed { background: var(--a-failed); }
+.badge.agent-state.stopped { background: var(--a-stopped); }
+.badge.agent-state.running { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .5; } }
-@media (prefers-reduced-motion: reduce) { .badge.needs-you { background: var(--warn-bg); color: var(--warn); border-color: transparent; white-space: normal; }
-.last-message { margin: 0; padding: 6px 10px; border-left: 3px solid var(--border); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow-y: auto; }
-.badge.agent.running { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .badge.agent-state.running { animation: none; } }
 
 .agent { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 4px 0 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
 .agent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.agent-head button.badge { cursor: pointer; font: inherit; }
+/* A fixed line height keeps the state badge (whose ✓/⚠ glyphs come from a taller fallback font) level with the branch badge. */
+.agent-head .badge { line-height: 16px; }
+.agent-head button.badge { cursor: pointer; font: inherit; line-height: 16px; margin: 0; }
 .agent-head code { font-size: 11.5px; }
 .agent-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .muted { color: var(--muted); }
-.btn { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+/* Every agent-panel button has the same size; only the next step is .primary. */
+.btn { display: inline-flex; align-items: center; gap: 5px; height: 28px; font: inherit; line-height: 1; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
 .btn:hover:not(:disabled) { border-color: var(--muted); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .review { display: flex; flex-direction: column; gap: 6px; }
 .notes { font: inherit; width: 100%; box-sizing: border-box; resize: vertical; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.last-message { margin: 0; padding: 2px 10px; border-left: 3px solid var(--border); max-height: 220px; overflow-y: auto; }
+.last-message > :first-child { margin-top: 0; }
+.last-message > :last-child { margin-bottom: 0; }
+.last-message.markdown h1 { display: block; font-size: 14px; margin: 10px 0 4px; }
+.last-message.markdown h2 { font-size: 13.5px; margin: 10px 0 4px; }
 .agent summary { cursor: pointer; color: var(--muted); }
 .agent pre { margin: 6px 0 0; padding: 6px 8px; background: var(--bg); border-radius: 6px; overflow-x: auto; font-size: 11.5px; }
+.commits { margin: 6px 0 0; padding: 6px 8px; list-style: none; background: var(--bg); border-radius: 6px; font: 11.5px/1.45 ui-monospace, monospace; }
+.commits li { overflow-wrap: anywhere; padding-left: 2ch; text-indent: -2ch; }
 .activity ol { margin: 6px 0 0; padding-left: 20px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
 .activity li { overflow-wrap: anywhere; white-space: pre-wrap; }
 .activity li.tool { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11.5px; }
