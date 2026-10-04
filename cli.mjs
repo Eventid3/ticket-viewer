@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveFeatures, loadFeature, setStatus, appendComment } from './lib/tickets.mjs';
 import { createAgents, claudeCli } from './lib/agents.mjs';
+import { createCodemap } from './lib/codemap.mjs';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const DEFAULT_LANES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
@@ -65,8 +66,12 @@ const opts = parseArgs(process.argv.slice(2));
 let project;
 try { project = resolveFeatures(opts.dir); } catch (e) { console.error(e.message); process.exit(1); }
 
+// Structure-diff review; hidden when codemap isn't installed.
+const codemap = createCodemap();
 const agents = createAgents({
   scratchRoot: project.scratchRoot, cli: claudeCli(opts.claude), permissionMode: opts.permissionMode, difftool: opts.difftool,
+  // Snapshot the base while the agent works, so opening its structure diff later is fast.
+  onWorktree: codemap ? (worktree, base) => codemap.warmUp(worktree, base) : undefined,
   onChange: (id, record) => {
     // Committed work and a finished turn hand the ticket to you; any other state keeps it claimed.
     if (record.state === 'done' && ticketStatus(id) === 'claimed') writeStatus(id, 'ready-for-review');
@@ -87,6 +92,7 @@ function snapshot() {
     features: project.features.map(f => ({ name: f.name, tickets: loadFeature(f) })),
     moves: MOVES,
     agents: agents ? agents.all() : null,
+    codemap: !!codemap,
   };
 }
 
@@ -112,6 +118,14 @@ function writeStatus(id, status) {
 
 class HttpError extends Error {
   constructor(code, message) { super(message); this.code = code; }
+}
+
+/** The ticket's agent worktree and base, for codemap. */
+function reviewTarget(id) {
+  if (!codemap) throw new HttpError(400, 'codemap is not installed');
+  const r = agents?.get(id);
+  if (!r?.worktree || !fs.existsSync(r.worktree)) throw new HttpError(404, 'No worktree for this ticket');
+  return r;
 }
 
 function addNotes(id, notes) {
@@ -211,6 +225,12 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { record, ...agents.activity(id), changes: agents.changes(id) });
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/codemap/summary') {
+      const { worktree, base } = reviewTarget(url.searchParams.get('id'));
+      try { return send(res, 200, await codemap.summary(worktree, base)); }
+      catch (e) { throw new HttpError(502, e.message); }
+    }
+
     if (req.method === 'POST') {
       // Only accept JSON from our own page, so other sites can't change tickets or start agents.
       const origin = req.headers.origin;
@@ -221,6 +241,10 @@ const server = http.createServer(async (req, res) => {
       else if (url.pathname === '/api/agent/start') await startAgent(id);
       else if (url.pathname === '/api/agent/stop') { if (!(await agents?.stop(id))) throw new HttpError(409, 'No agent session'); }
       else if (url.pathname === '/api/agent/diff') { if (!agents?.get(id)) throw new HttpError(404, 'No agent for this ticket'); agents.openDiff(id); }
+      else if (url.pathname === '/api/codemap/view') {
+        const { worktree, base } = reviewTarget(id);
+        try { await codemap.view(worktree, base); } catch (e) { throw new HttpError(502, e.message); }
+      }
       else return send(res, 404, { error: 'Not found' });
       return send(res, 200, { ok: true });
     }
@@ -248,7 +272,8 @@ function listen(port, attemptsLeft) {
     const url = `http://localhost:${port}/`;
     const names = project.features.map(f => f.name).join(', ');
     const agentLine = agents ? `agents: ${opts.claude} --bg (${opts.permissionMode}), worktrees in ${path.join(agents.repoRoot, '.claude', 'worktrees')}` : 'agents: off (not a git repo)';
-    console.log(`Ticket viewer for ${project.scratchRoot}\n  features: ${names}\n  ${agentLine}\n  ${url}\n(Ctrl+C to stop; agents keep running as Claude Code background sessions)`);
+    const codemapLine = codemap ? 'structure diff: codemap' : 'structure diff: off (codemap not on PATH)';
+    console.log(`Ticket viewer for ${project.scratchRoot}\n  features: ${names}\n  ${agentLine}\n  ${codemapLine}\n  ${url}\n(Ctrl+C to stop; agents keep running as Claude Code background sessions)`);
     if (opts.open) openBrowser(url);
   });
 }

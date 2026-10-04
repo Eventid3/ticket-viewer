@@ -34,8 +34,18 @@ The board can run Claude Code for you, as Claude Code background sessions (`clau
    **Copy attach** (also the ⧉ button on a claimed card) copies `claude attach <id>`. Run it in a terminal to watch the session, answer prompts, or reply. The session keeps running when you leave it (← or Ctrl+Z).
 3. **Review**: when the agent ends its turn with new commits, the ticket moves to **ready-for-review**. There:
    - **Open diff in meld** runs `git difftool --dir-diff --tool=meld <base>` in the worktree, so you see everything since the branch was created, including uncommitted work. The panel also lists the commits and a diff stat, and shows the agent's last message.
+   - **Open structure diff** (only when [codemap](#structure-diff-codemap) is installed) opens codemap's review list of structural changes since the same base.
    - **Approve** sets `resolved`, stops the session (its conversation is kept), and copies `git merge <branch> && git worktree remove <worktree> && git branch -d <branch>`. You do the merge.
    - **Send back to agent** adds your notes to the ticket's `## Comments` and resumes the agent's session with them, so it keeps its full context. The ticket goes back to claimed.
+
+### Structure diff (codemap)
+
+When `codemap` is on your PATH at startup, a ticket in review also gets a structure diff; without it the board works exactly as before and shows none of this. The board only runs codemap's command line and imports none of its code.
+
+- **Open structure diff** runs `codemap view --repo <worktree> --base <base>`, which opens a browser page listing structural changes (new cycles, project references, coupling, injected concrete classes, surface changes, moves). Mark each item OK or Flag there, with a note. If codemap fails, the panel shows why.
+- The **Structure diff** section of the review panel runs `codemap diff --repo <worktree> --base <base> --json` and shows the count per group and your flagged items. It refreshes when you come back to the board's tab, or with ↻.
+- **Copy flagged notes to Send back** adds the flagged items, in plain words with your notes, to the review notes. **Send back to agent** then works as usual.
+- When an agent starts, the board runs `codemap snapshot --repo <worktree> --commit <base>` in the background, so the structure diff opens faster later. Its result is ignored.
 
 **Stop agent** stops the session. **Continue agent** resumes it in the background and tells it to carry on. Sessions belong to Claude Code, not to the board: they keep running if you close the board, and the board picks them up again when it starts. The board's records are in `.git/ticket-viewer/agents.json`.
 
