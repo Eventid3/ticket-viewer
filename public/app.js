@@ -505,11 +505,12 @@ function renderAgent() {
       el('strong', {}, 'Claude Code'),
       a ? agentBadge(a) : el('span', { class: 'muted' }, 'no agent yet'),
       a ? badgeButton(el('code', {}, a.branch), a.branch, 'branch') : null,
+      a?.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
       a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
     actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
     last,
     review,
-    a?.processes?.length ? renderProcesses(t, a.processes) : null,
+    a?.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
       el('summary', {}, `${changes.commits.length} commit${changes.commits.length === 1 ? '' : 's'}${changes.dirty ? ' · uncommitted changes' : ''}`),
       changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
@@ -520,7 +521,8 @@ function renderAgent() {
 }
 
 // Processes running in the ticket's worktree (servers, watchers, shells), each killable with its process group.
-function renderProcesses(t, procs) {
+// A listening port opens the app at the agent hostname, once the board knows whether the port speaks TLS.
+function renderProcesses(t, procs, hostname) {
   const short = s => s.length > 80 ? s.slice(0, 77) + '…' : s;
   return el('div', { class: 'process-list' },
     el('div', { class: 'agent-head' },
@@ -529,7 +531,9 @@ function renderProcesses(t, procs) {
       btn('✕ Kill all', { title: 'Stop every process running in the worktree (SIGTERM, then SIGKILL after 5 s)' }, () => killProcesses(t))),
     el('ul', {}, procs.map(p => el('li', {},
       el('code', { class: 'command', title: p.command }, short(p.command)),
-      p.ports.map(port => el('span', { class: 'badge', title: `Listening on port ${port}` }, `:${port}`)),
+      p.ports.map(({ port, scheme }) => scheme && hostname
+        ? el('a', { class: 'badge action', href: `${scheme}://${hostname}:${port}`, target: '_blank', rel: 'noopener', title: `Open the app at ${scheme}://${hostname}:${port}` }, `↗ Open app :${port}`)
+        : el('span', { class: 'badge', title: `Listening on port ${port}${scheme ? '' : ' (checking for TLS)'}` }, `:${port}`)),
       el('span', { class: 'muted' }, `pid ${p.pid}`),
       btn('Kill', { title: `Stop process group ${p.pgid} (SIGTERM, then SIGKILL after 5 s)` }, () => killProcesses(t, p.pid))))));
 }

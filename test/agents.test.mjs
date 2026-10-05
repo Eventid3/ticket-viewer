@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createAgents } from '../lib/agents.mjs';
+import { createAgents, agentHostname } from '../lib/agents.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 const commit = (cwd, msg) => {
@@ -112,7 +112,8 @@ test('resume continues the same conversation in the same worktree', async () => 
   assert.equal(cli.sessions.find(s => s.id === 'bg1').state, 'stopped', 'old session stopped first');
   const { args, cwd } = cli.calls[1];
   assert.equal(cwd, first.worktree);
-  assert.deepEqual(args.slice(0, 3), ['--resume', 'session-bg1', 'Please add a test']);
+  assert.deepEqual(args.slice(0, 2), ['--resume', 'session-bg1']);
+  assert.match(args[2], /^Please add a test\n/);
   assert.equal(r.bgId, 'bg2');
   assert.equal(r.state, 'running');
 });
@@ -191,12 +192,18 @@ function setupWithProcesses() {
   const s = setup();
   const processes = fakeProcesses();
   const seen = [];
-  const agents = createAgents({ scratchRoot: path.join(s.repo, '.scratch'), cli: s.cli, processes, onProcesses: id => seen.push(id) });
-  return { ...s, agents, processes, seen };
+  const probed = [];
+  // Ports below 6000 speak TLS, like Kestrel's https endpoint; the rest are plain http.
+  // Probes answer when the test calls answerProbes().
+  let pending = [];
+  const probeScheme = port => { probed.push(port); return new Promise(r => pending.push(() => r(port < 6000 ? 'https' : 'http'))); };
+  const answerProbes = async () => { pending.splice(0).forEach(f => f()); await new Promise(r => setImmediate(r)); };
+  const agents = createAgents({ scratchRoot: path.join(s.repo, '.scratch'), cli: s.cli, processes, probeScheme, onProcesses: id => seen.push(id) });
+  return { ...s, agents, processes, seen, probed, answerProbes };
 }
 
 test('each poll finds the worktree processes of every ticket with a worktree, even when its agent has stopped', async () => {
-  const { cli, agents, processes, seen, ticket } = setupWithProcesses();
+  const { cli, agents, processes, seen, ticket, answerProbes } = setupWithProcesses();
   const r = await agents.start(ID, ticket);
   await agents.stop(ID);
   cli.sessions.length = 0;
@@ -207,11 +214,12 @@ test('each poll finds the worktree processes of every ticket with a worktree, ev
   seen.length = 0;
   await agents.poll();
 
-  assert.deepEqual(agents.get(ID).processes.map(p => [p.pid, p.command, p.ports]), [[10, 'dotnet watch', []], [11, 'dotnet web.dll', [5000]]]);
+  assert.deepEqual(agents.get(ID).processes.map(p => [p.pid, p.command, p.ports]), [[10, 'dotnet watch', []], [11, 'dotnet web.dll', [{ port: 5000, scheme: null }]]]);
   assert.deepEqual(agents.all()[ID].processes.length, 2);
   assert.deepEqual(seen, [ID], 'tells the board when the list changes');
+  await answerProbes();
   await agents.poll();
-  assert.deepEqual(seen, [ID], 'and only then');
+  assert.deepEqual(seen, [ID, ID], 'and when a port\'s scheme is known, and only then');
 });
 
 test('kills one worktree process by its group, or all of them, and refuses anything else', async () => {
@@ -258,4 +266,70 @@ test('the prompt tells the agent to stop its worktree processes', async () => {
   const { cli, agents, ticket } = setup();
   await agents.start(ID, ticket);
   assert.match(cli.calls[0].args[0], /stop any servers or background processes you started/i);
+});
+
+test('probes each listening port once for TLS and gives its scheme', async () => {
+  const { agents, processes, probed, seen, ticket, answerProbes } = setupWithProcesses();
+  const r = await agents.start(ID, ticket);
+  processes.procs.push(
+    { cwd: r.worktree, pid: 11, pgid: 10, command: 'dotnet web.dll', ports: [5001, 6000] },
+    { cwd: r.worktree, pid: 20, pgid: 20, command: 'npm run dev', ports: [7000] });
+  await agents.poll();
+  assert.deepEqual(agents.get(ID).processes.flatMap(p => p.ports), [
+    { port: 5001, scheme: null }, { port: 6000, scheme: null }, { port: 7000, scheme: null }], 'unknown until probed');
+
+  seen.length = 0;
+  await answerProbes();
+  assert.deepEqual(seen, [ID, ID, ID], 'tells the board once the schemes are known');
+  assert.deepEqual(agents.get(ID).processes.flatMap(p => p.ports), [
+    { port: 5001, scheme: 'https' }, { port: 6000, scheme: 'http' }, { port: 7000, scheme: 'http' }]);
+
+  await agents.poll();
+  agents.all();
+  await answerProbes();
+  assert.deepEqual(probed, [5001, 6000, 7000], 'not again on later polls or reads');
+
+  // A new server on a port the old one used gets probed afresh.
+  processes.procs = [{ cwd: r.worktree, pid: 30, pgid: 30, command: 'node other.js', ports: [5001] }];
+  await agents.poll();
+  assert.deepEqual(probed, [5001, 6000, 7000, 5001]);
+});
+
+test('each ticket has a stable agent hostname that is one valid DNS label under dev.localhost', async () => {
+  assert.equal(agentHostname('agent-sandboxing/02-per-worktree-localhost-hostname.md'), 'agent-sandboxing-02.dev.localhost');
+  assert.equal(agentHostname('agent-sandboxing/02-per-worktree-localhost-hostname.md'), agentHostname('agent-sandboxing/02-other-slug.md'), 'the slug doesn\'t matter');
+  assert.equal(agentHostname('Codemap v1.2/11-x.md'), 'codemap-v1-2-11.dev.localhost', 'dots, spaces and capitals');
+  assert.equal(agentHostname('Ünïcode_Fëature!!/3-x.md'), 'unicode-feature-3.dev.localhost', 'accents, underscores, punctuation');
+  assert.equal(agentHostname('--weird--/07-x.md'), 'weird-07.dev.localhost', 'no leading, trailing or doubled hyphens');
+  assert.equal(agentHostname('日本/05-x.md'), 'ticket-05.dev.localhost', 'nothing usable left of the feature');
+  assert.equal(agentHostname('feat/notes.md'), 'feat-notes.dev.localhost', 'a file without a number');
+
+  const long = agentHostname(`${'very-long-feature-name-'.repeat(5)}x/123-x.md`);
+  const label = long.replace(/\.dev\.localhost$/, '');
+  assert.ok(label.length <= 63, `${label} is ${label.length} characters`);
+  assert.match(label, /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/);
+  assert.match(label, /-123$/, 'keeps the number intact');
+  assert.equal(label, 'very-long-feature-name-very-long-feature-name-very-long-fea-123');
+});
+
+test('records carry the agent hostname', async () => {
+  const { agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  assert.equal(agents.get(ID).hostname, 'feat-01.dev.localhost');
+});
+
+test('the prompt tells the agent to browse at its hostname and fall back to localhost, on start and resume', async () => {
+  const { cli, agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  const prompt = cli.calls[0].args[0];
+  assert.match(prompt, /feat-01\.dev\.localhost/);
+  assert.match(prompt, /usual scheme and port/);
+  assert.match(prompt, /fall back to localhost/i);
+  assert.match(prompt, /don't change the app's host configuration/i);
+
+  await agents.poll();
+  await agents.resume(ID, ticket, 'Fix the tests');
+  const message = cli.calls[1].args[2];
+  assert.match(message, /^Fix the tests\n/);
+  assert.match(message, /feat-01\.dev\.localhost/);
 });

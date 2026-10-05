@@ -50,6 +50,27 @@ Agents start servers and watchers to test their work (`dotnet run`, `dotnet watc
 
 This works on Linux only. Without `/proc` (macOS, Windows) the board shows none of it and works as before.
 
+### Agent hostname
+
+Several agents often test the same app at once, each from its own worktree on its own port. Browsers keep cookies per hostname, not per port, so `localhost:5001` and `localhost:5002` share one cookie store: when one agent logs in, the other's login breaks. Incognito doesn't help, since all incognito tabs share one store too.
+
+So each ticket gets an **agent hostname**, `<feature>-<NN>.dev.localhost`, e.g. `agent-sandboxing-02.dev.localhost`. Chrome and Firefox send every `*.localhost` name to 127.0.0.1 without `/etc/hosts` changes, and keep separate cookies per name. The .NET dev certificate covers `*.dev.localhost`, so HTTPS works too.
+
+- The name is one DNS label, because a wildcard certificate only matches one: lowercase letters, digits and hyphens, at most 63 characters. Accents are dropped, other characters (dots included) become hyphens, and a long feature name is cut short; `-<NN>` is always kept. The same ticket always gets the same name.
+- The agent's prompt (on start and on every resume) tells it to keep the app's usual scheme and port but browse at its agent hostname instead of `localhost`. If the app rejects the name, it falls back to `localhost` without touching the app's host configuration, and says so in its final message.
+- The Claude Code panel shows the agent hostname next to the branch; click it to copy. Each listening port of a [worktree process](#worktree-processes) gets an **↗ Open app :port** link to `<scheme>://<agent hostname>:<port>`. The board tries a TLS handshake once per port to pick `https` or `http`; until that's done the port shows without a link.
+
+Limits:
+
+- An app that sets `Domain=localhost` on its cookies shares them across all `*.localhost` names, so its logins still collide.
+- An app with a strict host allowlist, such as ASP.NET's `AllowedHosts`, rejects the name (often with a 400) until you widen it for development, e.g. `"AllowedHosts": "*"` in `appsettings.Development.json`.
+
+For interactive sessions you start yourself, paste this into the project's `CLAUDE.md`:
+
+```md
+When testing the app in a browser from a git worktree, open it at `<feature>-<NN>.dev.localhost` (from the ticket being worked on) with the app's usual scheme and port instead of `localhost`, so logins in parallel worktrees don't share cookies. If the app rejects that hostname, use `localhost` and don't change its host configuration.
+```
+
 ### Structure diff (codemap)
 
 When `codemap` is on your PATH at startup, a ticket in review also gets a structure diff; without it the board works exactly as before and shows none of this. The board only runs codemap's command line and imports none of its code.

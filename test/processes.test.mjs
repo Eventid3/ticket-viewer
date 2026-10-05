@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { procProcesses } from '../lib/processes.mjs';
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
+import { spawn, execFileSync } from 'node:child_process';
+import { procProcesses, tlsScheme } from '../lib/processes.mjs';
 
 const tmp = prefix => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 
@@ -91,4 +94,32 @@ test('finds a real server in a folder and kills its whole process group', { skip
 
   await lister.kill(parent.pid);
   assert.deepEqual(lister.find([wt])[wt], []);
+});
+
+const listen = server => new Promise(r => server.listen(0, '127.0.0.1', () => r(server.address().port)));
+
+function selfSignedCert() {
+  const dir = tmp('cert-');
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=localhost',
+    '-keyout', path.join(dir, 'key.pem'), '-out', path.join(dir, 'cert.pem')], { stdio: 'ignore' });
+  return { key: fs.readFileSync(path.join(dir, 'key.pem')), cert: fs.readFileSync(path.join(dir, 'cert.pem')) };
+}
+const hasOpenssl = (() => { try { execFileSync('openssl', ['version'], { stdio: 'ignore' }); return true; } catch { return false; } })();
+
+test('a port that completes a TLS handshake is https, even with a self-signed certificate', { skip: !hasOpenssl }, async t => {
+  const server = https.createServer(selfSignedCert(), (_req, res) => res.end());
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  assert.equal(await tlsScheme(await listen(server)), 'https');
+});
+
+test('a plain http port, a silent port and a closed port are http', async t => {
+  const plain = http.createServer((_req, res) => res.end());
+  const silent = net.createServer(() => {}); // accepts and never answers
+  t.after(() => { plain.closeAllConnections(); plain.close(); silent.close(); });
+  assert.equal(await tlsScheme(await listen(plain)), 'http');
+  assert.equal(await tlsScheme(await listen(silent), { timeoutMs: 200 }), 'http');
+  const gone = net.createServer();
+  const closed = await listen(gone);
+  await new Promise(r => gone.close(r));
+  assert.equal(await tlsScheme(closed), 'http');
 });
