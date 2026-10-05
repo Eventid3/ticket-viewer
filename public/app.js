@@ -441,7 +441,8 @@ function renderAgent() {
   const t = state.ticket && findTicket(state.ticket);
   const a = t && agentOf(t);
   const d = state.detail?.id === t?.id ? state.detail : null;
-  if (!t || (!a && t.status !== 'ready-for-agent')) { box.hidden = true; return; }
+  // Empty it too: the previous ticket's buttons (Stop agent) are bound to that ticket.
+  if (!t || (!a && t.status !== 'ready-for-agent')) { box.hidden = true; box.replaceChildren(); return; }
   box.hidden = false;
 
   const busy = agentBusy(a);
