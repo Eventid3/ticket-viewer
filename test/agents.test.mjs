@@ -310,6 +310,7 @@ test('each ticket has a stable agent hostname that is one valid DNS label under 
   assert.match(label, /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/);
   assert.match(label, /-123$/, 'keeps the number intact');
   assert.equal(label, 'very-long-feature-name-very-long-feature-name-very-long-fea-123');
+  assert.ok(agentHostname(`f/${'9'.repeat(80)}-x.md`).split('.')[0].length <= 63, 'even with an absurd number');
 });
 
 test('records carry the agent hostname', async () => {

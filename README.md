@@ -68,7 +68,7 @@ Limits:
 For interactive sessions you start yourself, paste this into the project's `CLAUDE.md`:
 
 ```md
-When testing the app in a browser from a git worktree, open it at `<feature>-<NN>.dev.localhost` (from the ticket being worked on) with the app's usual scheme and port instead of `localhost`, so logins in parallel worktrees don't share cookies. If the app rejects that hostname, use `localhost` and don't change its host configuration.
+When testing the app in a browser from a git worktree, open it at `<feature>-<NN>.dev.localhost` (from the ticket being worked on, e.g. `.scratch/agent-sandboxing/issues/02-x.md` gives `agent-sandboxing-02.dev.localhost`; lowercase, anything other than letters and digits becomes `-`, so no dots) with the app's usual scheme and port instead of `localhost`, so logins in parallel worktrees don't share cookies. If the app rejects that hostname, use `localhost` and don't change its host configuration.
 ```
 
 ### Structure diff (codemap)
