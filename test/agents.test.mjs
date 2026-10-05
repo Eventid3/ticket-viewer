@@ -174,3 +174,88 @@ test('is unavailable outside a git repository', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nogit-'));
   assert.equal(createAgents({ scratchRoot: dir }), null);
 });
+
+// Stands in for the /proc process lister: reports whatever processes the test puts in each folder.
+function fakeProcesses() {
+  const lister = {
+    procs: [], killed: [],
+    find(folders) {
+      return Object.fromEntries(folders.map(f => [f, lister.procs.filter(p => p.cwd === f || p.cwd.startsWith(f + path.sep)).map(({ cwd, ...p }) => p)]));
+    },
+    async kill(pgid) { lister.killed.push(pgid); lister.procs = lister.procs.filter(p => p.pgid !== pgid); },
+  };
+  return lister;
+}
+
+function setupWithProcesses() {
+  const s = setup();
+  const processes = fakeProcesses();
+  const seen = [];
+  const agents = createAgents({ scratchRoot: path.join(s.repo, '.scratch'), cli: s.cli, processes, onProcesses: id => seen.push(id) });
+  return { ...s, agents, processes, seen };
+}
+
+test('each poll finds the worktree processes of every ticket with a worktree, even when its agent has stopped', async () => {
+  const { cli, agents, processes, seen, ticket } = setupWithProcesses();
+  const r = await agents.start(ID, ticket);
+  await agents.stop(ID);
+  cli.sessions.length = 0;
+  processes.procs.push(
+    { cwd: path.join(r.worktree, 'web'), pid: 10, pgid: 10, command: 'dotnet watch', ports: [] },
+    { cwd: path.join(r.worktree, 'web'), pid: 11, pgid: 10, command: 'dotnet web.dll', ports: [5000] },
+    { cwd: path.dirname(r.worktree), pid: 12, pgid: 12, command: 'vim', ports: [] });
+  seen.length = 0;
+  await agents.poll();
+
+  assert.deepEqual(agents.get(ID).processes.map(p => [p.pid, p.command, p.ports]), [[10, 'dotnet watch', []], [11, 'dotnet web.dll', [5000]]]);
+  assert.deepEqual(agents.all()[ID].processes.length, 2);
+  assert.deepEqual(seen, [ID], 'tells the board when the list changes');
+  await agents.poll();
+  assert.deepEqual(seen, [ID], 'and only then');
+});
+
+test('kills one worktree process by its group, or all of them, and refuses anything else', async () => {
+  const { agents, processes, ticket } = setupWithProcesses();
+  const r = await agents.start(ID, ticket);
+  processes.procs.push(
+    { cwd: r.worktree, pid: 10, pgid: 10, command: 'dotnet watch', ports: [] },
+    { cwd: r.worktree, pid: 11, pgid: 10, command: 'dotnet web.dll', ports: [5000] },
+    { cwd: r.worktree, pid: 20, pgid: 20, command: 'npm run dev', ports: [5173] },
+    { cwd: '/elsewhere', pid: 30, pgid: 30, command: 'postgres', ports: [5432] });
+
+  await assert.rejects(agents.killProcesses(ID, 30), /not a worktree process/);
+  await assert.rejects(agents.killProcesses('feat/02-b.md', 10), /not a worktree process/);
+  assert.deepEqual(processes.killed, []);
+
+  assert.equal(await agents.killProcesses(ID, 11), 2, 'stops the whole group');
+  assert.deepEqual(processes.killed, [10]);
+  assert.deepEqual(agents.get(ID).processes.map(p => p.pid), [20], 'the list updates');
+
+  assert.equal(await agents.killProcesses(ID), 1);
+  assert.deepEqual(agents.get(ID).processes, []);
+  assert.equal(await agents.killProcesses(ID), 0, 'nothing left to stop');
+});
+
+test('stopping the agent leaves its worktree processes running', async () => {
+  const { agents, processes, ticket } = setupWithProcesses();
+  const r = await agents.start(ID, ticket);
+  processes.procs.push({ cwd: r.worktree, pid: 10, pgid: 10, command: 'npm run dev', ports: [] });
+  await agents.stop(ID);
+  assert.deepEqual(processes.killed, []);
+  assert.equal(agents.get(ID).processes.length, 1);
+});
+
+test('without a process lister, records carry no processes', async () => {
+  const { repo, cli, ticket } = setup();
+  const agents = createAgents({ scratchRoot: path.join(repo, '.scratch'), cli, processes: null });
+  await agents.start(ID, ticket);
+  await agents.poll();
+  assert.equal('processes' in agents.get(ID), false);
+  await assert.rejects(agents.killProcesses(ID), /not available/);
+});
+
+test('the prompt tells the agent to stop its background processes', async () => {
+  const { cli, agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  assert.match(cli.calls[0].args[0], /stop any servers or background processes you started/i);
+});

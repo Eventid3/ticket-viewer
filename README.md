@@ -35,8 +35,20 @@ The board can run Claude Code for you, as Claude Code background sessions (`clau
 3. **Review**: when the agent ends its turn with new commits, the ticket moves to **ready-for-review**. There:
    - **Open diff in meld** runs `git difftool --dir-diff --tool=meld <base>` in the worktree, so you see everything since the branch was created, including uncommitted work. The panel also lists the commits and a diff stat, and shows the agent's last message.
    - **Open structure diff** (only when [codemap](#structure-diff-codemap) is installed) opens codemap's review list of structural changes since the same base.
-   - **Approve** sets `resolved`, stops the session (its conversation is kept), and copies `git merge <branch> && git worktree remove <worktree> && git branch -d <branch>`. You do the merge.
+   - **Approve** sets `resolved`, stops the session (its conversation is kept), stops its [worktree processes](#worktree-processes), and copies `git merge <branch> && git worktree remove <worktree> && git branch -d <branch>`. You do the merge.
    - **Send back to agent** adds your notes to the ticket's `## Comments` and resumes the agent's session with them, so it keeps its full context. The ticket goes back to claimed.
+
+### Worktree processes
+
+Agents start servers and watchers to test their work (`dotnet run`, `dotnet watch`, `npm run dev`, …), and these can still be running after the ticket reaches review. A **worktree process** is any running process whose working folder is inside a ticket's worktree, whoever started it, you or the agent. The agent's own Claude Code session (and anything in its process group, such as its MCP servers) is not one.
+
+- On each poll the board finds them through `/proc/<pid>/cwd`, for every ticket with a worktree, whether or not its agent is running. For each it records the PID, process group, command line and listening TCP ports. Processes it can't read, such as other users', are skipped.
+- A card with worktree processes shows **⚙ N processes**, in any lane. The Claude Code panel lists them with their command, ports and PID.
+- **Kill** stops the process's whole process group, so `dotnet watch` takes its app down with it: SIGTERM first, then SIGKILL to anything still alive after 5 seconds. **Kill all** does that for every worktree process of the ticket. The board only kills processes that are worktree processes of that ticket at that moment.
+- **Approve** and any move to **ready-for-agent** stop the ticket's worktree processes, and the toast says how many. Moving to ready-for-review doesn't, so you can click through the running app while you review. **Stop agent** stops only the session.
+- The agent's prompt asks it to stop the servers and background processes it started before ending its turn; this catches the ones it forgets.
+
+This works on Linux only. Without `/proc` (macOS, Windows) the board shows none of it and works as before.
 
 ### Structure diff (codemap)
 

@@ -77,11 +77,8 @@ const agents = createAgents({
     if (record.state === 'done' && ticketStatus(id) === 'claimed') writeStatus(id, 'ready-for-review');
     notifyChange();
   },
+  onProcesses: () => notifyChange(),
 });
-if (agents) {
-  const poll = () => agents.poll().catch(e => console.warn(`Could not read agent sessions: ${e.message}`)).finally(() => setTimeout(poll, 3000));
-  poll();
-}
 
 function snapshot() {
   // Re-resolve so features created while running show up.
@@ -173,6 +170,12 @@ async function move(id, to, notes) {
   writeStatus(id, to);
   // Approving ends the session; its conversation is kept, so `claude attach` still opens it.
   if (to === 'resolved' && agents?.get(id)?.bgId && agents.get(id).state !== 'stopped') await agents.stop(id).catch(() => {});
+  // Approving or handing the ticket back also stops the servers left running in its worktree.
+  // Moving to ready-for-review doesn't, so you can still click through the running app while reviewing.
+  if (['resolved', 'ready-for-agent'].includes(to) && agents?.get(id)?.processes?.length) {
+    return { stopped: await agents.killProcesses(id).catch(() => 0) };
+  }
+  return {};
 }
 
 // --- live reload via server-sent events -------------------------------------------------
@@ -188,6 +191,12 @@ try {
   });
 } catch (e) {
   console.warn(`File watching unavailable (${e.message}); refresh the page manually.`);
+}
+
+// Polling can notify the page, so it starts once live reload is set up.
+if (agents) {
+  const poll = () => agents.poll().catch(e => console.warn(`Could not read agent sessions: ${e.message}`)).finally(() => setTimeout(poll, 3000));
+  poll();
 }
 
 // --- HTTP --------------------------------------------------------------------------------
@@ -236,10 +245,16 @@ const server = http.createServer(async (req, res) => {
       const origin = req.headers.origin;
       if (origin && new URL(origin).host !== req.headers.host) return send(res, 403, { error: 'Cross-origin request refused' });
       if (!String(req.headers['content-type']).startsWith('application/json')) return send(res, 415, { error: 'Expected JSON' });
-      const { id, to, notes } = await readBody(req);
-      if (url.pathname === '/api/move') await move(id, to, notes);
+      const { id, to, notes, pid } = await readBody(req);
+      if (url.pathname === '/api/move') return send(res, 200, { ok: true, ...await move(id, to, notes) });
       else if (url.pathname === '/api/agent/start') await startAgent(id);
       else if (url.pathname === '/api/agent/stop') { if (!(await agents?.stop(id))) throw new HttpError(409, 'No agent session'); }
+      else if (url.pathname === '/api/agent/kill') {
+        if (!agents?.get(id)) throw new HttpError(404, 'No agent for this ticket');
+        // `pid` picks one worktree process (its whole group); without it, all of the ticket's are stopped.
+        try { return send(res, 200, { ok: true, stopped: await agents.killProcesses(id, pid) }); }
+        catch (e) { throw new HttpError(409, e.message); }
+      }
       else if (url.pathname === '/api/agent/diff') { if (!agents?.get(id)) throw new HttpError(404, 'No agent for this ticket'); agents.openDiff(id); }
       else if (url.pathname === '/api/codemap/view') {
         const { worktree, base } = reviewTarget(id);

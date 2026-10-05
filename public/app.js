@@ -53,24 +53,35 @@ function canMove(t, to) {
   return !(to === 'claimed' && (t.blocked || !state.data.agents));
 }
 
-// Null when the request worked, otherwise the error to show.
-async function post(path, body) {
+// The response body, with `error` set when the request failed.
+async function request(path, body) {
   const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (res.ok) return null;
-  const err = await res.json().catch(() => ({}));
-  return err.error || `Request failed (${res.status})`;
+  const json = await res.json().catch(() => ({}));
+  return res.ok ? json : { ...json, error: json.error || `Request failed (${res.status})` };
 }
 
+// Null when the request worked, otherwise the error to show.
+async function post(path, body) { return (await request(path, body)).error || null; }
+
+// The response body when the request worked; otherwise shows the error and returns null.
 async function api(path, body) {
-  const error = await post(path, body);
-  if (error) toast(error);
-  return !error;
+  const result = await request(path, body);
+  if (result.error) { toast(result.error); return null; }
+  return result;
 }
 
 async function moveTicket(t, to, notes) {
-  if (!(await api('/api/move', { id: t.id, to, notes }))) return false;
-  toast(to === 'claimed' ? `${label(t)}: agent started · claude attach to watch` : `${label(t)} → ${to}`);
-  return true;
+  const result = await api('/api/move', { id: t.id, to, notes });
+  if (!result) return null;
+  toast(to === 'claimed' ? `${label(t)}: agent started · claude attach to watch` : `${label(t)} → ${to}${stoppedNote(result)}`);
+  return result;
+}
+
+const stoppedNote = result => result.stopped ? ` · Stopped ${plural(result.stopped, 'worktree process')}` : '';
+
+async function killProcesses(t, pid) {
+  const result = await api('/api/agent/kill', { id: t.id, pid });
+  if (result) toast(`Stopped ${plural(result.stopped, 'worktree process')}`);
 }
 
 // Agent log, commits and diff stat for the open ticket; polled while its agent runs.
@@ -262,6 +273,7 @@ function renderCard(t) {
   else if (!DONE.has(t.status) && t.blockedBy.length) foot.push(el('span', { class: 'badge ready', title: 'All blockers are done' }, '✓ unblocked'));
   const agent = agentOf(t);
   if (agent && !DONE.has(t.status)) foot.push(agentBadge(agent));
+  if (agent?.processes?.length) foot.push(processBadge(agent.processes));
   if (t.type) foot.push(el('span', { class: 'badge' }, t.type));
   if (t.comments) foot.push(el('span', { class: 'badge', title: 'Comments' }, `💬 ${t.comments}`));
   if (t.checks.total) {
@@ -306,6 +318,14 @@ function agentBadge(a) {
     default: return badge('stopped', { title: 'The session is not running; attaching reopens it' }, '■ agent stopped');
   }
 }
+
+// Shown in every lane: a server left running after approval is exactly what you want to notice.
+function processBadge(procs) {
+  const title = procs.map(p => `${p.pid}: ${p.command}`).join('\n');
+  return el('span', { class: 'badge processes', title }, `⚙ ${plural(procs.length, 'process')}`);
+}
+
+function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
 
 function openTicket(id) {
   state.ticket = id;
@@ -457,8 +477,11 @@ function renderAgent() {
           class: 'btn primary', disabled: !!state.structure?.opening,
           title: `codemap view: the structural changes since ${a.base.slice(0, 8)}, to mark OK or Flag`,
         }, () => openStructureDiff(t)) : null,
-        btn('✓ Approve', { title: 'Mark resolved, stop the session and copy the merge command' }, async () => {
-          if (await moveTicket(t, 'resolved')) copy(mergeCommand(a), 'merge command');
+        btn('✓ Approve', { title: 'Mark resolved, stop the session and its worktree processes, and copy the merge command' }, async () => {
+          const result = await moveTicket(t, 'resolved');
+          if (!result) return;
+          await copy(mergeCommand(a), 'merge command');
+          if (result.stopped) toast(`Copied merge command${stoppedNote(result)}`);
         }),
         btn('↩ Send back to agent', { title: 'Resume the agent\'s session with your notes' }, () => {
           if (!notes.value.trim()) return toast('Write what should change first');
@@ -484,6 +507,7 @@ function renderAgent() {
     actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
     last,
     review,
+    a?.processes?.length ? renderProcesses(t, a.processes) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
       el('summary', {}, `${changes.commits.length} commit${changes.commits.length === 1 ? '' : 's'}${changes.dirty ? ' · uncommitted changes' : ''}`),
       changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
@@ -491,6 +515,21 @@ function renderAgent() {
     d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: busy },
       el('summary', {}, 'Agent activity'),
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
+}
+
+// Processes running in the ticket's worktree (servers, watchers, shells), each killable with its process group.
+function renderProcesses(t, procs) {
+  const short = s => s.length > 80 ? s.slice(0, 77) + '…' : s;
+  return el('div', { class: 'process-list' },
+    el('div', { class: 'agent-head' },
+      el('strong', {}, 'Worktree processes'),
+      el('span', { class: 'muted' }, plural(procs.length, 'process')),
+      btn('✕ Kill all', { title: 'Stop every process running in the worktree (SIGTERM, then SIGKILL after 5 s)' }, () => killProcesses(t))),
+    el('ul', {}, procs.map(p => el('li', {},
+      el('code', { class: 'command', title: p.command }, short(p.command)),
+      p.ports.map(port => el('span', { class: 'badge', title: `Listening on port ${port}` }, `:${port}`)),
+      el('span', { class: 'muted' }, `pid ${p.pid}`),
+      btn('Kill', { title: `Stop process group ${p.pgid} (SIGTERM, then SIGKILL after 5 s)` }, () => killProcesses(t, p.pid))))));
 }
 
 // The review panel's codemap section: counts per review-list group, flagged entries, and copying their notes.
@@ -507,7 +546,6 @@ function renderStructure(t, notes) {
     notes.focus();
     toast(`Copied ${plural(missing.length, 'flagged note')} into the notes`);
   };
-  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   return el('div', { class: 'structure' },
     el('div', { class: 'agent-head' },
       el('strong', {}, 'Structure diff'),
