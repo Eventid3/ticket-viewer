@@ -223,5 +223,11 @@ body {
 .structure .icon-btn { margin-left: auto; font-size: 14px; padding: 0 6px; }
 .structure-groups { display: flex; flex-wrap: wrap; gap: 4px; }
 .badge.structural { border-color: var(--s-ready-for-review); color: var(--s-ready-for-review); }
+/* codemap's reference warning can be long: one line cut with "…", the whole text on hover or keyboard focus. */
+.structure .badge.needs-you {
+  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; border-radius: 6px;
+  background: var(--warn-bg); color: var(--warn); border-color: transparent;
+}
+.structure .badge.needs-you:hover, .structure .badge.needs-you:focus { white-space: normal; overflow-wrap: anywhere; }
 .flagged { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; }
 .error-text { color: var(--danger); overflow-wrap: anywhere; white-space: pre-wrap; }

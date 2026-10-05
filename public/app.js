@@ -520,7 +520,7 @@ function renderStructure(t, notes) {
       s.groups.length
         ? s.groups.map(g => el('span', { class: 'badge' + (g.kind === 'other-change' ? '' : ' structural') }, `${g.label}: ${g.count}`))
         : el('span', { class: 'muted' }, 'No structural changes')) : null,
-    s?.warning ? el('div', { class: 'badge needs-you' }, s.warning) : null,
+    s?.warning ? el('div', { class: 'badge needs-you', title: s.warning, tabindex: 0 }, s.warning) : null,
     s?.flagged.length ? el('ul', { class: 'flagged' }, s.flagged.map(f => el('li', { title: f.title }, f.note))) : null,
     s ? el('div', { class: 'agent-actions' },
       btn(`⇣ Copy ${plural(s.notes.length, 'flagged note')} to Send back`, {
