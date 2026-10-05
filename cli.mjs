@@ -172,9 +172,8 @@ async function move(id, to, notes) {
   if (to === 'resolved' && agents?.get(id)?.bgId && agents.get(id).state !== 'stopped') await agents.stop(id).catch(() => {});
   // Approving or handing the ticket back also stops the servers left running in its worktree.
   // Moving to ready-for-review doesn't, so you can still click through the running app while reviewing.
-  if (['resolved', 'ready-for-agent'].includes(to) && agents?.get(id)?.processes?.length) {
-    return { stopped: await agents.killProcesses(id).catch(() => 0) };
-  }
+  // killProcesses scans afresh, so a server started since the last poll is stopped too.
+  if (['resolved', 'ready-for-agent'].includes(to) && agents) return { stopped: await agents.killProcesses(id).catch(() => 0) };
   return {};
 }
 

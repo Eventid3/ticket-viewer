@@ -254,7 +254,7 @@ test('without a process lister, records carry no processes', async () => {
   await assert.rejects(agents.killProcesses(ID), /not available/);
 });
 
-test('the prompt tells the agent to stop its background processes', async () => {
+test('the prompt tells the agent to stop its worktree processes', async () => {
   const { cli, agents, ticket } = setup();
   await agents.start(ID, ticket);
   assert.match(cli.calls[0].args[0], /stop any servers or background processes you started/i);

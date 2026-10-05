@@ -77,11 +77,12 @@ async function moveTicket(t, to, notes) {
   return result;
 }
 
-const stoppedNote = result => result.stopped ? ` · Stopped ${plural(result.stopped, 'worktree process')}` : '';
+const stoppedText = n => `Stopped ${plural(n, 'worktree process')}`;
+const stoppedNote = result => result.stopped ? ` · ${stoppedText(result.stopped)}` : '';
 
 async function killProcesses(t, pid) {
   const result = await api('/api/agent/kill', { id: t.id, pid });
-  if (result) toast(`Stopped ${plural(result.stopped, 'worktree process')}`);
+  if (result) toast(stoppedText(result.stopped));
 }
 
 // Agent log, commits and diff stat for the open ticket; polled while its agent runs.
@@ -178,9 +179,10 @@ async function copy(text, what) {
     ta.select();
     const ok = document.execCommand('copy');
     ta.remove();
-    if (!ok) return toast(`Could not copy ${what}`);
+    if (!ok) { toast(`Could not copy ${what}`); return false; }
   }
   toast(`Copied ${what}: ${text}`);
+  return true;
 }
 
 // ---- rendering --------------------------------------------------------------------------
@@ -480,8 +482,8 @@ function renderAgent() {
         btn('✓ Approve', { title: 'Mark resolved, stop the session and its worktree processes, and copy the merge command' }, async () => {
           const result = await moveTicket(t, 'resolved');
           if (!result) return;
-          await copy(mergeCommand(a), 'merge command');
-          if (result.stopped) toast(`Copied merge command${stoppedNote(result)}`);
+          // Copying shows its own toast, so repeat the stopped count in it.
+          if (await copy(mergeCommand(a), 'merge command') && result.stopped) toast(`Copied merge command${stoppedNote(result)}`);
         }),
         btn('↩ Send back to agent', { title: 'Resume the agent\'s session with your notes' }, () => {
           if (!notes.value.trim()) return toast('Write what should change first');
