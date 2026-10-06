@@ -10,6 +10,7 @@
 <body>
   <header class="topbar">
     <h1>Tickets</h1>
+    <select id="project" aria-label="Project"></select>
     <select id="feature" aria-label="Feature"></select>
     <input id="search" type="search" placeholder="Filter by number, title, text…" aria-label="Filter">
     <label class="toggle"><input id="hideEmpty" type="checkbox"> Hide empty lanes</label>
@@ -33,6 +34,24 @@
     <article id="drawerBody" class="markdown"></article>
   </aside>
   <div id="toast" class="toast" hidden></div>
+
+  <dialog id="projectsDialog" class="projects-dialog" aria-labelledby="projectsTitle">
+    <div class="drawer-head">
+      <h2 id="projectsTitle">Projects</h2>
+      <button id="projectsClose" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <form id="projectForm" class="project-form">
+      <label for="projectPath">Add project</label>
+      <div class="project-add">
+        <input id="projectPath" type="text" placeholder="/home/you/code/my-project or ~/code/my-project" autocomplete="off" spellcheck="false">
+        <button id="projectAdd" class="btn primary" type="submit">Add</button>
+      </div>
+      <p class="project-hint">Absolute path of a repo root, its .scratch folder, or one feature folder.</p>
+      <p id="projectError" class="project-error" role="alert" hidden></p>
+    </form>
+    <ul id="projectList" class="project-list"></ul>
+    <p id="projectListEmpty" class="project-hint">No projects yet.</p>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

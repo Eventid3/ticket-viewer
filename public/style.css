@@ -249,3 +249,31 @@ body {
 .badge.merging { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
 .merge-conflict.merging { border-color: var(--warn); background: var(--warn-bg); }
 .merge-conflict.merging strong { color: var(--warn); }
+
+/* Project picker: unavailable projects are listed but can't be picked. */
+.topbar select option:disabled { color: var(--muted); }
+.board-empty { margin: 48px auto; max-width: 440px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+
+/* Add project dialog */
+.projects-dialog {
+  width: min(560px, calc(100vw - 32px)); padding: 16px 18px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+}
+.projects-dialog::backdrop { background: rgba(10, 12, 20, .35); }
+.projects-dialog .drawer-head h2 { font-size: 17px; }
+.project-form label { font-weight: 600; }
+.project-add { display: flex; gap: 8px; margin-top: 6px; }
+.project-add input {
+  flex: 1; min-width: 0; height: 28px; padding: 0 8px; font: inherit; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.project-hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.project-error { color: var(--danger); background: var(--danger-bg); border-radius: 6px; padding: 6px 8px; margin: 8px 0 0; font-size: 13px; }
+.project-list { list-style: none; padding: 0; margin: 16px 0 0; border-top: 1px solid var(--border); }
+.project-list li { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.project-list li.unavailable .project-name { color: var(--muted); }
+.project-row { display: flex; align-items: center; gap: 10px; }
+.project-name { font-weight: 600; white-space: nowrap; }
+.project-path { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-warning { color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 6px 8px; margin-top: 6px; font-size: 13px; }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }

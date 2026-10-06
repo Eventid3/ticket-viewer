@@ -1,21 +1,24 @@
 'use strict';
 
 const ALL = '__all__';
+const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
 const $ = id => document.getElementById(id);
-const state = { data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false, detail: null, dragging: null, structure: null, notes: {} };
+const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false, detail: null, dragging: null, structure: null, notes: {} };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
+  if (p.has('project')) state.project = p.get('project');
   if (p.has('feature')) state.feature = p.get('feature');
   state.ticket = p.get('ticket');
 }
 function writeHash() {
   const p = new URLSearchParams();
+  if (state.project) p.set('project', state.project);
   if (state.feature) p.set('feature', state.feature);
   if (state.ticket) p.set('ticket', state.ticket);
   history.replaceState(null, '', '#' + p.toString());
@@ -25,16 +28,49 @@ function loadPrefs() {
     const p = JSON.parse(localStorage.getItem('ticket-viewer') || '{}');
     state.hideEmpty = !!p.hideEmpty;
     state.unblockedOnly = !!p.unblockedOnly;
+    state.lastProject = typeof p.lastProject === 'string' ? p.lastProject : null;
   } catch { /* storage unavailable */ }
 }
 function savePrefs() {
-  try { localStorage.setItem('ticket-viewer', JSON.stringify({ hideEmpty: state.hideEmpty, unblockedOnly: state.unblockedOnly })); } catch { }
+  try { localStorage.setItem('ticket-viewer', JSON.stringify({ hideEmpty: state.hideEmpty, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
 }
 
 // ---- data -------------------------------------------------------------------------------
+const availableProjects = () => (state.projects || []).filter(p => p.available);
+const currentProject = () => state.projects?.find(p => p.id === state.project) || null;
+
+// The project list; keeps the selected project while it is available, else picks the last one you picked, else the first.
+async function loadProjects() {
+  const res = await fetch('/api/projects');
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+  state.projects = body.projects;
+  const ids = availableProjects().map(p => p.id);
+  const pick = [state.project, state.lastProject, ids[0]].find(id => id && ids.includes(id)) || null;
+  selectProject(pick);
+  renderProjectSelect();
+  if (projectsDialogOpen()) renderProjectsDialog();
+}
+
+// Switches the board to project `id`. The feature and open ticket start over, unless no project was selected
+// yet: then they came from the URL hash and are kept while they exist in that project.
+function selectProject(id) {
+  if (state.project && id !== state.project) { state.feature = null; state.ticket = null; }
+  if (id !== state.project) { state.data = null; state.detail = null; state.structure = null; }
+  state.project = id;
+  if (id) { state.lastProject = id; savePrefs(); }
+  writeHash();
+}
+
 async function load() {
-  const res = await fetch('/api/tickets');
-  state.data = await res.json();
+  if (!state.project) { state.data = null; renderFeatureSelect(); render(); return; }
+  const project = state.project;
+  const res = await fetch(`/api/tickets?project=${encodeURIComponent(project)}`);
+  const body = await res.json().catch(() => ({}));
+  if (project !== state.project) return; // another project was picked meanwhile
+  // Unknown or no longer available: the project list says what's left.
+  if (!res.ok) { toast(body.error || `Request failed (${res.status})`); state.project = null; await loadProjects(); return load(); }
+  state.data = body;
   const names = state.data.features.map(f => f.name);
   if (state.feature !== ALL && !names.includes(state.feature)) state.feature = names[0];
   renderFeatureSelect();
@@ -53,9 +89,9 @@ function canMove(t, to) {
   return !(to === 'claimed' && (t.blocked || !state.data.agents));
 }
 
-// The response body, with `error` set when the request failed.
-async function request(path, body) {
-  const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+// The response body, with `error` set when the request failed. Every request names the selected project.
+async function request(path, body, method = 'POST') {
+  const res = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: state.project, ...body }) });
   const json = await res.json().catch(() => ({}));
   return res.ok ? json : { ...json, error: json.error || `Request failed (${res.status})` };
 }
@@ -90,7 +126,7 @@ async function loadDetail() {
   clearTimeout(loadDetail.timer);
   const t = state.ticket && findTicket(state.ticket);
   if (!t || !agentOf(t)) { state.detail = null; keepDrawerView(renderAgent); return; }
-  const res = await fetch(`/api/agent?id=${encodeURIComponent(t.id)}`);
+  const res = await fetch(`/api/agent?${projectQuery(t.id)}`);
   state.detail = res.ok ? { id: t.id, ...(await res.json()) } : null;
   keepDrawerView(renderAgent);
   if (agentBusy(state.detail?.record)) loadDetail.timer = setTimeout(loadDetail, 3000);
@@ -105,7 +141,7 @@ async function loadStructure(id, rendering = false) {
   if (!rendering) renderAgent();
   let result;
   try {
-    const res = await fetch(`/api/codemap/summary?id=${encodeURIComponent(id)}`);
+    const res = await fetch(`/api/codemap/summary?${projectQuery(id)}`);
     const body = await res.json().catch(() => ({}));
     result = res.ok ? { summary: body } : { error: body.error || `Request failed (${res.status})` };
   } catch (e) { result = { error: e.message }; }
@@ -126,12 +162,17 @@ async function openStructureDiff(t) {
   renderAgent();
 }
 
+// Query string naming the selected project and ticket `id`.
+function projectQuery(id) { return new URLSearchParams({ project: state.project, id }).toString(); }
+
 function currentTickets() {
+  if (!state.data) return [];
   const feats = state.data.features.filter(f => state.feature === ALL || f.name === state.feature);
   return feats.flatMap(f => f.tickets);
 }
 
 function findTicket(id) {
+  if (!state.data) return null;
   for (const f of state.data.features) for (const t of f.tickets) if (t.id === id) return t;
   return null;
 }
@@ -215,8 +256,23 @@ function laneColor(status) {
 }
 function label(t) { return t.number ? `#${t.number}` : t.file; }
 
+function renderProjectSelect() {
+  const sel = $('project');
+  const projects = state.projects || [];
+  sel.replaceChildren(
+    ...(state.project ? [] : [el('option', { value: '' }, projects.length ? 'No project available' : 'No projects yet')]),
+    // The server lists the available projects by name, then the unavailable ones.
+    ...projects.map(p => el('option', { value: p.id, disabled: !p.available, title: p.available ? p.path : p.reason },
+      p.available ? p.name : `${p.name} (unavailable)`)),
+    el('option', { value: ADD_PROJECT }, 'Add project…'),
+  );
+  sel.value = state.project || '';
+}
+
 function renderFeatureSelect() {
   const sel = $('feature');
+  sel.hidden = !state.data;
+  if (!state.data) return;
   const feats = state.data.features;
   sel.replaceChildren(
     ...(feats.length > 1 ? [el('option', { value: ALL }, 'All features')] : []),
@@ -225,7 +281,19 @@ function renderFeatureSelect() {
   sel.value = state.feature;
 }
 
+// Instead of the board, while no project is selected.
+function renderEmpty() {
+  const none = !state.projects?.length;
+  $('board').replaceChildren(el('div', { class: 'board-empty' },
+    el('p', {}, none ? 'No projects yet. Add a repo root, its .scratch folder or one feature folder.'
+      : state.project ? 'Loading…' : state.projects ? 'None of your projects is available right now; hover one in the project list to see why.' : 'Loading…'),
+    state.projects && !state.project ? btn('+ Add project', { class: 'btn primary' }, openProjectsDialog) : null));
+  $('stats').textContent = '';
+  $('drawer').hidden = true;
+}
+
 function render() {
+  if (!state.data) return renderEmpty();
   const all = currentTickets();
   const visible = all.filter(matches);
   const lanes = laneList(all);
@@ -731,14 +799,91 @@ function renderMarkdown(md) {
   return out.join('\n');
 }
 
+// ---- Add project dialog -------------------------------------------------------------------
+// Adds a project by its path and lists the remembered ones, each with Remove. Removing only forgets the project.
+const dialog = { error: null, busy: false, confirmRemove: null };
+
+function projectsDialogOpen() { return $('projectsDialog').open; }
+
+function openProjectsDialog() {
+  Object.assign(dialog, { error: null, busy: false, confirmRemove: null });
+  $('projectPath').value = '';
+  renderProjectsDialog();
+  $('projectsDialog').showModal();
+  $('projectPath').focus();
+}
+
+function renderProjectsDialog() {
+  $('projectError').textContent = dialog.error || '';
+  $('projectError').hidden = !dialog.error;
+  $('projectAdd').disabled = dialog.busy;
+  const projects = state.projects || [];
+  $('projectList').replaceChildren(...projects.map(p => {
+    const confirming = dialog.confirmRemove === p.id;
+    return el('li', { class: p.available ? '' : 'unavailable' },
+      el('div', { class: 'project-row' },
+        el('span', { class: 'project-name' }, p.name),
+        el('span', { class: 'project-path', title: p.available ? p.path : p.reason }, p.available ? p.path : `unavailable: ${p.reason}`),
+        confirming
+          ? btn('Remove anyway', { type: 'button', class: 'btn danger' }, () => removeProject(p))
+          : btn('Remove', { type: 'button', title: 'Forget this project; nothing on disk is touched' }, () => removeProject(p))),
+      // Agents keep running when their project is forgotten; only the board stops following them.
+      confirming ? el('div', { class: 'project-warning' },
+        `${plural(p.running, 'agent')} running; they keep running, but their tickets won't move until you add this project again`) : null);
+  }));
+  $('projectListEmpty').hidden = projects.length > 0;
+}
+
+async function addProject(e) {
+  e.preventDefault();
+  dialog.busy = true;
+  renderProjectsDialog();
+  const result = await request('/api/projects', { path: $('projectPath').value });
+  dialog.busy = false;
+  if (result.error) { dialog.error = result.error; renderProjectsDialog(); $('projectPath').focus(); return; }
+  $('projectsDialog').close();
+  selectProject(result.project.id);
+  // A feature folder opens the board on that feature.
+  if (result.feature) { state.feature = result.feature; writeHash(); }
+  await loadProjects();
+  await load();
+  toast(result.added ? `Added ${result.project.name}` : `${result.project.name} was already on the board`);
+}
+
+async function removeProject(p) {
+  // With agents running, the first click only warns.
+  if (p.running > 0 && dialog.confirmRemove !== p.id) { dialog.confirmRemove = p.id; renderProjectsDialog(); return; }
+  dialog.confirmRemove = null;
+  const result = await request(`/api/projects/${encodeURIComponent(p.id)}`, {}, 'DELETE');
+  if (result.error) { dialog.error = result.error; renderProjectsDialog(); return; }
+  toast(`Removed ${p.name} from the board; its files are untouched`);
+  await loadProjects();
+  await load();
+}
+
 // ---- wiring -----------------------------------------------------------------------------
 function connectEvents() {
   const es = new EventSource('/api/events');
-  es.addEventListener('change', () => load());
+  // One stream for every project: only the selected project's changes reload the board.
+  es.addEventListener('change', e => {
+    let project = null;
+    try { project = JSON.parse(e.data).project; } catch { /* reload anyway */ }
+    if (!project || project === state.project) load();
+  });
+  es.addEventListener('projects', () => loadProjects().then(() => { if (!state.data) load(); }));
   es.onopen = () => $('live').classList.remove('off');
   es.onerror = () => $('live').classList.add('off');
 }
 
+$('project').addEventListener('change', e => {
+  if (e.target.value === ADD_PROJECT) { e.target.value = state.project || ''; openProjectsDialog(); return; }
+  selectProject(e.target.value || null);
+  renderFeatureSelect();
+  render();
+  load();
+});
+$('projectForm').addEventListener('submit', addProject);
+$('projectsClose').addEventListener('click', () => $('projectsDialog').close());
 $('feature').addEventListener('change', e => { state.feature = e.target.value; state.ticket = null; writeHash(); render(); });
 $('search').addEventListener('input', e => { state.query = e.target.value.trim(); render(); });
 $('hideEmpty').addEventListener('change', e => { state.hideEmpty = e.target.checked; savePrefs(); render(); });
@@ -748,6 +893,7 @@ $('drawerClose').addEventListener('click', closeTicket);
 // so dragging a card over the drawer scrolls the board on toward the lanes behind it.
 $('drawer').addEventListener('dragover', () => { if (state.dragging) $('board').scrollLeft += 20; });
 document.addEventListener('keydown', e => {
+  if (projectsDialogOpen()) return; // the dialog has its own keys (Escape closes it)
   if (e.key === 'Escape' && state.ticket) closeTicket();
   const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
   if (e.key === 'c' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -764,10 +910,24 @@ function refreshStructure() {
 }
 window.addEventListener('focus', refreshStructure);
 document.addEventListener('visibilitychange', refreshStructure);
-window.addEventListener('hashchange', () => { readHash(); if (state.data) { renderFeatureSelect(); render(); } });
+window.addEventListener('hashchange', () => {
+  const project = state.project;
+  readHash();
+  // Another project in the hash (e.g. a link pasted in): load it, through the project list so an unknown id falls back.
+  if (state.project !== project) {
+    const { project: next, feature, ticket } = state;
+    state.project = project;
+    selectProject(next);
+    Object.assign(state, { feature, ticket });
+    writeHash();
+    loadProjects().then(load);
+    return;
+  }
+  if (state.data) { renderFeatureSelect(); render(); }
+});
 
 loadPrefs();
 readHash();
 $('hideEmpty').checked = state.hideEmpty;
 $('unblockedOnly').checked = state.unblockedOnly;
-load().then(connectEvents).catch(e => toast(`Failed to load tickets: ${e.message}`));
+loadProjects().then(load).then(connectEvents).catch(e => toast(`Failed to load tickets: ${e.message}`));

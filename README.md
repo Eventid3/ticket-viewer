@@ -3,14 +3,35 @@
 Local kanban board for projects that keep tickets as markdown files in `.scratch/<feature>/issues/NN-<slug>.md`. No dependencies; needs Node 20+.
 
 ```sh
-node ~/tools/ticket-viewer/cli.mjs ~/code/my-project                 # repo root: all features
-node ~/tools/ticket-viewer/cli.mjs ~/code/my-project/.scratch/foo    # one feature
-node ~/tools/ticket-viewer/cli.mjs . --port 5000 --no-open
+node ~/tools/ticket-viewer/cli.mjs                                   # every remembered project
+node ~/tools/ticket-viewer/cli.mjs ~/code/my-project                 # add (or open) a project: repo root
+node ~/tools/ticket-viewer/cli.mjs ~/code/my-project/.scratch/foo    # ... or one feature folder, opened on that feature
+node ~/tools/ticket-viewer/cli.mjs --port 5000 --no-open
 ```
 
-To get a `ticket-viewer` command on your PATH: `cd ~/tools/ticket-viewer && npm link`. Then run `ticket-viewer <project-folder>` from anywhere.
+To get a `ticket-viewer` command on your PATH: `cd ~/tools/ticket-viewer && npm link`. Then run `ticket-viewer` (or `ticket-viewer <project-folder>`) from anywhere.
 
-The folder can be a repo root containing `.scratch/`, a `.scratch` folder, or a single feature folder. The server listens on `127.0.0.1` (default port 4777, next free port if taken) and opens your browser.
+The server listens on `127.0.0.1` (default port 4777) and opens your browser.
+
+## Projects
+
+One board shows every **project** you've added, one at a time. A project is one `.scratch` folder and the tickets under it. A repo root, its `.scratch` folder and any of its feature folders all name the same project, so adding any of them twice keeps one entry.
+
+- **Config file**: projects are remembered in `$XDG_CONFIG_HOME/ticket-viewer/projects.json` (by default `~/.config/ticket-viewer/projects.json`), as a list of `{ "id", "path" }` where `path` is the absolute `.scratch` folder. The id is a slug of the repo folder's name, made when the project is added and never changed; a clash gets `-2`, `-3`, …. The id is what the URL, API and events use.
+- **Names**: the picker shows the repo folder's name (the folder holding `.scratch/`). When two projects share a name, both show `<parent>/<name>`, and go back to the plain name once the clash is gone.
+- **Picker**: top left, pick a project, then a feature in it ("All features" when it has more than one). The project goes in the URL hash as `project=<id>`, next to `feature` and `ticket`. Without a project in the hash, the board opens the project you picked last, else the first one.
+- **Add project**: the last entry in the project picker opens a dialog. Type an absolute path (`~` works): a repo root, a `.scratch` folder or a feature folder. The server checks it the same way as the command line and shows what's wrong under the field. On success the project is saved and selected; a feature folder opens on that feature.
+- **Worktrees**: a git worktree of another repo is refused ("This folder is a worktree of <repo>; add the repo instead"). Worktrees share the repo's agent records, so they're never a project of their own; add the repo.
+- **Remove**: the same dialog lists every project with **Remove**. It only forgets the project: no files, worktrees or agent sessions are touched. With agents running it first warns that they keep running but their tickets won't move until you add the project again. Agent records stay in `.git/ticket-viewer/agents.json`, so adding the project back picks them up.
+- **Unavailable**: a remembered project whose folder is gone or has no ticket folders stays in the list, greyed out and not selectable, with the reason as a tooltip. It never stops the board from starting. The board rechecks it every few seconds and when the project list loads, and picks it up without a restart once the folder is back.
+- **Per project**: each project has its own agents, file watching, moves and copy commands (paths relative to that project's repo root). Agents of every project are followed, not just the one on screen, so a ticket still moves to ready-for-review when its agent finishes while you look at another project. Lanes, `--claude`, `--permission-mode` and `--difftool` apply to every project.
+
+### Starting
+
+- `ticket-viewer` starts with the remembered projects. With none, the page offers **Add project**.
+- `ticket-viewer <folder>` checks the folder, adds it if it's new, and opens the board on it. A folder it can't use is an error.
+- **Hand-off**: before starting, the command checks the port. If a ticket-viewer is already running there, it hands the folder (if you gave one) to that board, opens the browser on it unless `--no-open` is set, and exits; nothing new starts. The running board's errors (say, a worktree) are printed and the command exits non-zero. `--lanes`, `--claude`, `--permission-mode` and `--difftool` values that differ from the running board's are ignored with a warning; restart the board to change them.
+- If something other than a ticket-viewer holds the port, the next free port is used.
 
 ## What it shows
 
@@ -97,7 +118,7 @@ When `codemap` is on your PATH at startup, a ticket in review also gets a struct
 - **Copy flagged notes to Send back** adds the flagged items, in plain words with your notes, to the review notes. **Send back to agent** then works as usual.
 - When an agent starts, the board runs `codemap snapshot --repo <worktree> --commit <base>` in the background, so the structure diff opens faster later. Its result is ignored.
 
-**Stop agent** stops the session. **Continue agent** resumes it in the background and tells it to carry on. Sessions belong to Claude Code, not to the board: they keep running if you close the board, and the board picks them up again when it starts. The board's records are in `.git/ticket-viewer/agents.json`.
+**Stop agent** stops the session. **Continue agent** resumes it in the background and tells it to carry on. Sessions belong to Claude Code, not to the board: they keep running if you close the board, and the board picks them up again when it starts. The board's records are in `.git/ticket-viewer/agents.json`, one file per repo.
 
 Sessions start in auto mode (`--permission-mode auto`): Claude Code's classifier approves routine actions, so the agent rarely stops to ask, and it still asks before risky ones. For more control, start the board with `--permission-mode acceptEdits`. Then only file edits are automatic, and anything not in your allowlist waits for you to attach and answer.
 
@@ -120,7 +141,7 @@ Cards can only be dragged to those lanes. Every other change, such as triage dec
 - The detail panel has **Copy /implement**, **Copy /triage**, and a **Move via /triage…** menu that copies `/triage move <path> to <state>`.
 - Press `c` while a ticket is open to copy its next step (`/implement` when there is none).
 
-Paths in these commands are relative to the repo root (the folder that contains `.scratch/`). Start the agent there.
+Paths in these commands are relative to the project's repo root (the folder that contains `.scratch/`). Start the agent there.
 
 Under the ticket title, the detail panel has up to three rows: the tickets it's blocked by and blocks, the copy commands above, and the ticket's path. The path is shown relative to the repo root, but clicking it copies the absolute path. When the ticket has an agent, **Copy worktree** next to it copies `cd <absolute worktree path>`, for jumping into the worktree from a terminal. The branch name in the Claude Code section copies the branch.
 
