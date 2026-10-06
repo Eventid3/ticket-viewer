@@ -18,8 +18,10 @@ const commit = (cwd, msg) => {
 // Stands in for the `claude` CLI, shared by every project's agents.
 function fakeCli() {
   const cli = {
-    calls: [], sessions: [], next: 1, lists: 0,
+    calls: [], sessions: [], next: 1, lists: 0, held: null,
     async background(args, cwd) {
+      // While `held` is an array, each call waits there until released, so its agent stays starting.
+      if (cli.held) await new Promise(r => cli.held.push(r));
       const id = `bg${cli.next++}`;
       cli.calls.push({ args, cwd, id });
       cli.sessions.push({ id, sessionId: `session-${id}`, cwd, kind: 'background', status: 'busy' });
@@ -221,6 +223,21 @@ test('agents work per project, and one finishing in another project moves its ti
   assert.equal(s.cli.lists, 1, 'one `claude agents` for every project');
   assert.equal(status(blog), 'ready-for-review');
   assert.equal(status(shop), 'claimed');
+});
+
+test('a second start while the first agent is still starting is refused', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  s.cli.held = [];
+  const first = s.post('/api/agent/start', { project: 'shop', id: 'feat/01-a.md' });
+  while (!s.cli.held.length) await new Promise(r => setTimeout(r, 5));
+  const second = s.post('/api/agent/start', { project: 'shop', id: 'feat/01-a.md' });
+  await new Promise(r => setTimeout(r, 50));
+  s.cli.held.forEach(release => release());
+  s.cli.held = null;
+  assert.equal((await first).status, 200);
+  assert.equal((await second).status, 409);
+  assert.equal(s.cli.calls.length, 1);
 });
 
 test('a project that is not a git repo has no agents, and starting one says why', async t => {
