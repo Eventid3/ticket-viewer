@@ -463,10 +463,11 @@ function renderAgent() {
   const needsYou = (a?.state === 'waiting' || a?.state === 'idle') && !['ready-for-agent', 'ready-for-review'].includes(t.status);
   if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${needsYou ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
   if (a?.bgId && a.state !== 'stopped' && a.state !== 'failed') actions.push(btn('■ Stop agent', { title: 'Stop the session; its conversation is kept' }, () => api('/api/agent/stop', { id: t.id })));
+  // The server checks the same before resolving.
   if (['claimed', 'ready-for-review'].includes(t.status) && a?.conflict && !busy) {
     actions.push(btn('⚔ Resolve conflicts', {
       class: 'btn primary',
-      title: `Claim the ticket and have the agent merge ${a.ref} into ${a.branch} (merge, not rebase), resolve ${plural(a.conflict.files.length, 'file')}, run the tests and commit. Nothing is added to the ticket's ## Comments`,
+      title: `Move the ticket to claimed and have the agent merge ${a.ref} into ${a.branch} (merge, not rebase), resolve ${plural(a.conflict.files.length, 'file')}, run the tests and commit. Nothing is added to the ticket's ## Comments`,
     }, async () => {
       if (await api('/api/agent/resolve-conflicts', { id: t.id })) toast(`${label(t)}: agent is resolving the merge conflict · claude attach to watch`);
     }));

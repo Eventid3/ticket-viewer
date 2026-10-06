@@ -153,9 +153,10 @@ async function startAgent(id, message) {
  * a fixed prompt rather than review notes, so nothing is added to the ticket's ## Comments.
  */
 async function resolveConflicts(id) {
-  agentTicket(id, ['claimed', 'ready-for-review'], 'claimed or ready-for-review');
+  // No blocker check: the ticket's work exists already, and merging its reference branch doesn't depend on blockers.
+  const t = agentTicket(id, ['claimed', 'ready-for-review'], 'claimed or ready-for-review');
   if (!agents.get(id)?.conflict) throw new HttpError(409, 'No merge conflict to resolve');
-  await claimWhile(findTicket(id), file => agents.resolveConflicts(id, file));
+  await claimWhile(t, file => agents.resolveConflicts(id, file));
 }
 
 // The ticket, when it is in one of `statuses` and no agent is working on it.
