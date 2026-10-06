@@ -495,7 +495,8 @@ function renderAgent() {
           if (!result) return;
           // Copying shows its own toast, so repeat the stopped count and any merge conflict in it.
           const warning = conflict ? ` · ⚔ it conflicts with ${a.ref} in ${plural(conflict.files.length, 'file')}` : '';
-          if (await copy(mergeCommand(a), 'merge command') && (result.stopped || warning)) toast(`Copied merge command${warning}${stoppedNote(result)}`);
+          const copied = await copy(mergeCommand(a), 'merge command');
+          if (result.stopped || warning) toast(`${copied ? 'Copied merge command' : 'Could not copy merge command'}${warning}${stoppedNote(result)}`);
         }),
         btn('↩ Send back to agent', { title: 'Resume the agent\'s session with your notes' }, () => {
           if (!notes.value.trim()) return toast('Write what should change first');

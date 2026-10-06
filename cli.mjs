@@ -78,6 +78,7 @@ const agents = createAgents({
     notifyChange();
   },
   onProcesses: () => notifyChange(),
+  onConflicts: () => notifyChange(),
   // Work that is done or dropped has nothing left to merge.
   checkConflicts: id => ['claimed', 'ready-for-review'].includes(ticketStatus(id)),
 });

@@ -378,7 +378,7 @@ function setupConflicts() {
   const agents = createAgents({
     scratchRoot: path.join(s.repo, '.scratch'), cli: s.cli, processes: null,
     checkConflicts: id => checked.has(id),
-    onChange: (id, r, prev) => s.changes.push(`${id}: ${prev}→${r.state}`),
+    onConflicts: id => s.changes.push(id),
   });
   return { ...s, agents, checked, ticketB: path.join(path.dirname(s.ticket), '02-b.md') };
 }
@@ -402,6 +402,7 @@ test('an older record without a reference branch falls back to the branch checke
   delete saved[ID].ref;
   fs.writeFileSync(file, JSON.stringify(saved));
   const again = createAgents({ scratchRoot: path.join(repo, '.scratch'), cli, processes: null });
+  assert.equal(again.get(ID).ref, 'main', 'before the first poll too');
   await again.poll();
   assert.equal(again.get(ID).ref, 'main');
 });
@@ -414,6 +415,12 @@ test('a detached HEAD or a deleted reference branch turns the check off', async 
   await agents.poll();
   assert.equal(agents.get(ID).ref, null);
   assert.equal(agents.get(ID).conflict, null);
+  git(repo, 'checkout', '-q', 'main');
+  await agents.poll();
+  assert.equal(agents.get(ID).ref, null, 'started detached: stays off when a branch is checked out again');
+  await agents.stop(ID);
+  await agents.start(ID, ticket);
+  assert.equal(agents.get(ID).ref, null, 'also when started again');
 
   const { repo: repo2, agents: agents2, ticket: ticket2 } = setupConflicts();
   git(repo2, 'checkout', '-q', '-b', 'temp');
@@ -441,7 +448,7 @@ test('merging ticket A into the reference branch shows ticket B\'s merge conflic
   assert.deepEqual(agents.get('feat/02-b.md').conflict, { files: ['shared.txt'] });
   assert.deepEqual(agents.all()['feat/02-b.md'].conflict, { files: ['shared.txt'] });
   assert.equal(agents.get(ID).conflict, null);
-  assert.deepEqual(changes, ['feat/02-b.md: running→running'], 'tells the board');
+  assert.deepEqual(changes, ['feat/02-b.md'], 'tells the board');
 });
 
 test('tickets outside the checked statuses get no conflict check', async () => {
