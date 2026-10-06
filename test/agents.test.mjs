@@ -579,8 +579,7 @@ async function setupManualMerge() {
 const mergeHead = cwd => { try { return git(cwd, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'); } catch { return null; } };
 
 test('merging by hand: conflicts leave the worktree mid-merge and open the mergetool on them', async () => {
-  const { agents, b, tool, toolRan, B } = await setupManualMerge();
-  tool('false');
+  const { agents, b, toolRan, B } = await setupManualMerge();
   const before = git(b.worktree, 'rev-parse', 'HEAD');
   const result = await agents.merge(B);
   assert.deepEqual(result, { clean: false, unresolved: 1 });
@@ -694,4 +693,17 @@ test('a merge started outside the board shows as in progress on the next poll', 
   await agents.poll();
   assert.deepEqual(agents.get(B).merging, { unresolved: 1 });
   assert.deepEqual(changes, [B], 'tells the board');
+});
+
+test('while meld is still open, Finish, Abort and a second meld are refused; ⚔ Resolve conflicts is refused mid-merge', async () => {
+  const { agents, b, tool, toolRan, B, ticketB } = await setupManualMerge();
+  tool('sleep 1');
+  await agents.merge(B);
+  await assert.rejects(agents.abortMerge(B), /still open/i);
+  await assert.rejects(agents.finishMerge(B), /unmerged/i);
+  assert.throws(() => agents.openMergetool(B), /already open/i);
+  await assert.rejects(agents.resolveConflicts(B, ticketB), /merge is in progress/i);
+  await toolRan();
+  await agents.abortMerge(B);
+  assert.equal(mergeHead(b.worktree), null);
 });
