@@ -64,6 +64,7 @@ body {
 }
 .topbar input[type="search"] { width: min(280px, 100%); }
 .toggle { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); cursor: pointer; user-select: none; }
+#feature option.completed { color: var(--muted); }
 .stats { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
 .live { color: var(--ok); font-size: 12px; }
 .live.off { color: var(--danger); }

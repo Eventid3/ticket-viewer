@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseTicket, setStatus, appendComment, loadFeature, resolveFeatures } from '../lib/tickets.mjs';
+import { parseTicket, setStatus, appendComment, loadFeature, resolveFeatures, isCompleted } from '../lib/tickets.mjs';
 
 const BOLD = `# 06: Build green on Umbraco 17
 
@@ -88,4 +88,11 @@ test('loadFeature marks tickets blocked until blockers are done', () => {
   assert.equal(single.length, 1);
   assert.equal(loadFeature(single[0])[0].path, '.scratch/feat/issues/01-a.md');
   fs.rmSync(root, { recursive: true });
+});
+
+test('a feature is completed when it has tickets and every one is in the done set', () => {
+  const t = status => ({ status });
+  assert.equal(isCompleted([t('resolved'), t('wontfix'), t('done'), t('closed')]), true);
+  assert.equal(isCompleted([t('resolved'), t('ready-for-agent')]), false);
+  assert.equal(isCompleted([]), false, 'a feature with no tickets is not completed');
 });

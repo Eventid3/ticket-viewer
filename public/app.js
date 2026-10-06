@@ -83,8 +83,9 @@ async function load() {
     return render();
   }
   state.data = body;
-  const names = state.data.features.map(f => f.name);
-  if (state.feature !== ALL && !names.includes(state.feature)) state.feature = names[0];
+  const feats = state.data.features;
+  // Without a valid pick the board opens on the first feature with work left, if there is one.
+  if (state.feature !== ALL && !feats.some(f => f.name === state.feature)) state.feature = (feats.find(f => !f.completed) ?? feats[0]).name;
   renderFeatureSelect();
   render();
   loadDetail();
@@ -283,9 +284,14 @@ function renderFeatureSelect() {
   sel.hidden = !state.data;
   if (!state.data) return;
   const feats = state.data.features;
+  // Features with work left first, then the completed ones, greyed out; each group stays alphabetical as the server sent it.
+  const option = f => el('option', { value: f.name, class: f.completed ? 'completed' : null }, `${f.name} (${f.tickets.length})`);
+  const open = feats.filter(f => !f.completed), completed = feats.filter(f => f.completed);
   sel.replaceChildren(
     ...(feats.length > 1 ? [el('option', { value: ALL }, 'All features')] : []),
-    ...feats.map(f => el('option', { value: f.name }, `${f.name} (${f.tickets.length})`)),
+    ...open.map(option),
+    ...(open.length && completed.length ? [el('option', { disabled: true }, '── completed ──')] : []),
+    ...completed.map(option),
   );
   sel.value = state.feature;
 }

@@ -94,6 +94,8 @@ test('GET /api/tickets routes by project id; a missing or unknown id is a 4xx', 
   assert.equal(shop.body.features[0].tickets[0].status, 'needs-triage');
   assert.equal(shop.body.features[0].tickets[0].path, '.scratch/feat/issues/01-a.md', 'paths are relative to that project\'s repo root');
   assert.equal((await s.get('/api/tickets?project=blog')).body.features[0].tickets[0].status, 'resolved');
+  assert.equal(shop.body.features[0].completed, false, 'a feature with open work is not completed');
+  assert.equal((await s.get('/api/tickets?project=blog')).body.features[0].completed, true, 'every ticket done: completed');
 
   assert.equal((await s.get('/api/tickets')).status, 400);
   const unknown = await s.get('/api/tickets?project=nope');
