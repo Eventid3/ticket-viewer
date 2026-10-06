@@ -33,9 +33,9 @@ The board can run Claude Code for you, as Claude Code background sessions (`clau
 
    **Copy attach** (also the ⧉ button on a claimed card) copies `claude attach <id>`. Run it in a terminal to watch the session, answer prompts, or reply. The session keeps running when you leave it (← or Ctrl+Z).
 3. **Review**: when the agent ends its turn with new commits, the ticket moves to **ready-for-review**. There:
-   - **Open diff in meld** runs `git difftool --dir-diff --tool=meld <base>` in the worktree, so you see everything since the branch was created, including uncommitted work. The panel also lists the commits and a diff stat, and shows the agent's last message.
-   - **Open structure diff** (only when [codemap](#structure-diff-codemap) is installed) opens codemap's review list of structural changes since the same base.
-   - **Approve** sets `resolved`, stops the session (its conversation is kept), stops its [worktree processes](#worktree-processes), and copies `git merge <branch> && git worktree remove <worktree> && git branch -d <branch>`. You do the merge.
+   - **Open diff in meld** runs `git difftool --dir-diff --tool=meld <review base>` in the worktree, so you see everything the ticket changed, including uncommitted work. The review base is `git merge-base <reference branch> HEAD` (see [Merge conflicts](#merge-conflicts)), so merging the reference branch into the ticket's branch doesn't fill the review with other tickets' work. The panel also lists the commits and a diff stat, and shows the agent's last message.
+   - **Open structure diff** (only when [codemap](#structure-diff-codemap) is installed) opens codemap's review list of structural changes since the same review base.
+   - **Approve** sets `resolved`, stops the session (its conversation is kept), stops its [worktree processes](#worktree-processes), and copies `git merge <branch> && git worktree remove <worktree> && git branch -d <branch>`. You do the merge, on the reference branch its title names. With a [merge conflict](#merge-conflicts) it still works, but the toast warns you.
    - **Send back to agent** adds your notes to the ticket's `## Comments` and resumes the agent's session with them, so it keeps its full context. The ticket goes back to claimed.
 
 ### Worktree processes
@@ -49,6 +49,15 @@ Agents start servers and watchers to test their work (`dotnet run`, `dotnet watc
 - The agent's prompt asks it to stop the servers and background processes it started before ending its turn; this catches the ones it forgets.
 
 This works on Linux only. Without `/proc` (macOS, Windows) the board shows none of it and works as before.
+
+### Merge conflicts
+
+Several agents work in parallel, and once you merge one ticket another may no longer merge cleanly. The board tells you before you approve.
+
+- **Reference branch**: when an agent starts, the board records the branch your main checkout is on as the ticket's reference branch, the branch its work will be merged into. Tickets started before the board recorded it use the branch checked out now. Always the local branch, never `origin/…`.
+- On each poll, for every ticket in **claimed** or **ready-for-review** with a worktree, the board runs `git merge-tree --write-tree --name-only <reference branch> <ticket branch>` in the repo. It's a test merge that touches no worktree or index. The result is cached by the pair of commits, so it only re-runs when either branch moves. Resolved tickets aren't checked.
+- A failing test merge is a **merge conflict**: the card shows **⚔ conflicts (N files)**, and the Claude Code panel lists the files and names the reference branch. Otherwise the panel says which branch the ticket merges into. After you merge one ticket, the others' indicators update on the next poll.
+- With a detached HEAD at start, or when the reference branch no longer exists, the check is off and the panel says **no reference branch**; review diffs then start from the commit the ticket's branch was created from.
 
 ### Agent hostname
 
@@ -75,8 +84,8 @@ When testing the app in a browser from a git worktree, open it at `<feature>-<NN
 
 When `codemap` is on your PATH at startup, a ticket in review also gets a structure diff; without it the board works exactly as before and shows none of this. The board only runs codemap's command line and imports none of its code.
 
-- **Open structure diff** runs `codemap view --repo <worktree> --base <base>`, which opens a browser page listing structural changes (new cycles, project references, coupling, injected concrete classes, surface changes, moves). Mark each item OK or Flag there, with a note. If codemap fails, the panel shows why.
-- The **Structure diff** section of the review panel runs `codemap diff --repo <worktree> --base <base> --json` and shows the count per group and your flagged items. It refreshes when you come back to the board's tab, or with ↻.
+- **Open structure diff** runs `codemap view --repo <worktree> --base <review base>`, which opens a browser page listing structural changes (new cycles, project references, coupling, injected concrete classes, surface changes, moves). Mark each item OK or Flag there, with a note. If codemap fails, the panel shows why.
+- The **Structure diff** section of the review panel runs `codemap diff --repo <worktree> --base <review base> --json` and shows the count per group and your flagged items. It refreshes when you come back to the board's tab, or with ↻.
 - **Copy flagged notes to Send back** adds the flagged items, in plain words with your notes, to the review notes. **Send back to agent** then works as usual.
 - When an agent starts, the board runs `codemap snapshot --repo <worktree> --commit <base>` in the background, so the structure diff opens faster later. Its result is ignored.
 

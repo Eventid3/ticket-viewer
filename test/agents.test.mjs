@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createAgents, agentHostname } from '../lib/agents.mjs';
+import { createAgents, agentHostname, conflictCheck, mergeTree } from '../lib/agents.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 const commit = (cwd, msg) => {
@@ -333,4 +333,154 @@ test('the prompt tells the agent to browse at its hostname and fall back to loca
   const message = cli.calls[1].args[2];
   assert.match(message, /^Fix the tests\n/);
   assert.match(message, /feat-01\.dev\.localhost/);
+});
+
+// --- reference branch and merge conflicts -------------------------------------------------
+
+const commitFile = (cwd, file, text, msg = `edit ${file}`) => {
+  fs.writeFileSync(path.join(cwd, file), text);
+  git(cwd, 'add', file);
+  git(cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', msg);
+};
+
+test('the conflict check: a clean merge, a conflict with its files, and a cache hit while neither branch moves', () => {
+  const { repo } = setup();
+  commitFile(repo, 'shared.txt', 'one\n');
+  git(repo, 'branch', 'side');
+  git(repo, 'branch', 'clean');
+  commitFile(repo, 'shared.txt', 'main\n');
+  git(repo, 'checkout', '-q', 'side');
+  commitFile(repo, 'shared.txt', 'side\n');
+  commitFile(repo, 'other.txt', 'side only\n');
+  git(repo, 'checkout', '-q', 'clean');
+  commitFile(repo, 'new.txt', 'clean\n');
+  git(repo, 'checkout', '-q', 'main');
+
+  let runs = 0;
+  const check = conflictCheck(repo, (...args) => { runs++; return mergeTree(...args); });
+  assert.deepEqual(check('main', 'clean'), { files: [] });
+  assert.deepEqual(check('main', 'side'), { files: ['shared.txt'] });
+  assert.equal(runs, 2);
+  assert.deepEqual(check('main', 'side'), { files: ['shared.txt'] });
+  assert.equal(runs, 2, 'same pair of commits: cached');
+
+  commitFile(repo, 'unrelated.txt', 'x\n');
+  check('main', 'side');
+  assert.equal(runs, 3, 're-runs once the reference branch moves');
+  assert.equal(check('main', 'no-such-branch'), null, 'nothing to say about a branch that is gone');
+});
+
+function setupConflicts() {
+  const s = setup();
+  const checked = new Set([ID, 'feat/02-b.md']);
+  fs.writeFileSync(path.join(path.dirname(s.ticket), '02-b.md'), '# 02: B\n\nStatus: claimed\n');
+  commitFile(s.repo, 'shared.txt', 'one\n');
+  const agents = createAgents({
+    scratchRoot: path.join(s.repo, '.scratch'), cli: s.cli, processes: null,
+    checkConflicts: id => checked.has(id),
+    onChange: (id, r, prev) => s.changes.push(`${id}: ${prev}→${r.state}`),
+  });
+  return { ...s, agents, checked, ticketB: path.join(path.dirname(s.ticket), '02-b.md') };
+}
+
+test('starting an agent records the main checkout\'s branch as the reference branch', async () => {
+  const { repo, agents, ticket } = setupConflicts();
+  git(repo, 'checkout', '-q', '-b', 'release');
+  const r = await agents.start(ID, ticket);
+  assert.equal(r.ref, 'release');
+  git(repo, 'checkout', '-q', 'main');
+  await agents.poll();
+  assert.equal(agents.get(ID).ref, 'release', 'kept when the main checkout moves on');
+});
+
+test('an older record without a reference branch falls back to the branch checked out now', async () => {
+  const { repo, cli, ticket } = setup();
+  const agents = createAgents({ scratchRoot: path.join(repo, '.scratch'), cli, processes: null });
+  await agents.start(ID, ticket);
+  const file = path.join(repo, '.git', 'ticket-viewer', 'agents.json');
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  delete saved[ID].ref;
+  fs.writeFileSync(file, JSON.stringify(saved));
+  const again = createAgents({ scratchRoot: path.join(repo, '.scratch'), cli, processes: null });
+  await again.poll();
+  assert.equal(again.get(ID).ref, 'main');
+});
+
+test('a detached HEAD or a deleted reference branch turns the check off', async () => {
+  const { repo, agents, ticket } = setupConflicts();
+  git(repo, 'checkout', '-q', '--detach');
+  const r = await agents.start(ID, ticket);
+  assert.equal(r.ref, null);
+  await agents.poll();
+  assert.equal(agents.get(ID).ref, null);
+  assert.equal(agents.get(ID).conflict, null);
+
+  const { repo: repo2, agents: agents2, ticket: ticket2 } = setupConflicts();
+  git(repo2, 'checkout', '-q', '-b', 'temp');
+  await agents2.start(ID, ticket2);
+  git(repo2, 'checkout', '-q', 'main');
+  git(repo2, 'branch', '-q', '-D', 'temp');
+  await agents2.poll();
+  assert.equal(agents2.get(ID).ref, null);
+  assert.equal(agents2.get(ID).conflict, null);
+});
+
+test('merging ticket A into the reference branch shows ticket B\'s merge conflict on the next poll', async () => {
+  const { repo, agents, changes, ticket, ticketB } = setupConflicts();
+  const a = await agents.start(ID, ticket);
+  const b = await agents.start('feat/02-b.md', ticketB);
+  commitFile(a.worktree, 'shared.txt', 'from A\n');
+  commitFile(b.worktree, 'shared.txt', 'from B\n');
+  await agents.poll();
+  assert.equal(agents.get(ID).conflict, null);
+  assert.equal(agents.get('feat/02-b.md').conflict, null);
+
+  changes.length = 0;
+  git(repo, 'merge', '-q', a.branch);
+  await agents.poll();
+  assert.deepEqual(agents.get('feat/02-b.md').conflict, { files: ['shared.txt'] });
+  assert.deepEqual(agents.all()['feat/02-b.md'].conflict, { files: ['shared.txt'] });
+  assert.equal(agents.get(ID).conflict, null);
+  assert.deepEqual(changes, ['feat/02-b.md: running→running'], 'tells the board');
+});
+
+test('tickets outside the checked statuses get no conflict check', async () => {
+  const { repo, agents, checked, ticket, ticketB } = setupConflicts();
+  const a = await agents.start(ID, ticket);
+  const b = await agents.start('feat/02-b.md', ticketB);
+  commitFile(a.worktree, 'shared.txt', 'from A\n');
+  commitFile(b.worktree, 'shared.txt', 'from B\n');
+  git(repo, 'merge', '-q', a.branch);
+  checked.delete('feat/02-b.md');
+  await agents.poll();
+  assert.equal(agents.get('feat/02-b.md').conflict, null);
+  checked.add('feat/02-b.md');
+  await agents.poll();
+  assert.deepEqual(agents.get('feat/02-b.md').conflict, { files: ['shared.txt'] });
+});
+
+test('review diffs measure from the merge-base with the reference branch', async () => {
+  const { repo, agents, ticket, ticketB } = setupConflicts();
+  const a = await agents.start(ID, ticket);
+  const b = await agents.start('feat/02-b.md', ticketB);
+  commitFile(a.worktree, 'a.txt', 'A\n', 'Work of A');
+  commitFile(b.worktree, 'b.txt', 'B\n', 'Work of B');
+  git(repo, 'merge', '-q', a.branch);
+  git(b.worktree, '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', '--no-edit', 'main');
+  await agents.poll();
+
+  const base = agents.reviewBase('feat/02-b.md');
+  assert.equal(base, git(repo, 'rev-parse', 'main'));
+  const changes = agents.changes('feat/02-b.md');
+  assert.deepEqual(changes.commits.map(c => c.replace(/^\w+ /, '')), ["Merge branch 'main' into ticket/feat/02-b", 'Work of B'], 'not A\'s work');
+  assert.equal(changes.base, base);
+  assert.match(changes.stat, /b\.txt/);
+  assert.doesNotMatch(changes.stat, /a\.txt/);
+});
+
+test('without a usable reference branch, review diffs measure from the stored base', async () => {
+  const { repo, agents, ticket } = setupConflicts();
+  git(repo, 'checkout', '-q', '--detach');
+  const r = await agents.start(ID, ticket);
+  assert.equal(agents.reviewBase(ID), r.base);
 });

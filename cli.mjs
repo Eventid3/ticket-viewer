@@ -78,6 +78,8 @@ const agents = createAgents({
     notifyChange();
   },
   onProcesses: () => notifyChange(),
+  // Work that is done or dropped has nothing left to merge.
+  checkConflicts: id => ['claimed', 'ready-for-review'].includes(ticketStatus(id)),
 });
 
 function snapshot() {
@@ -117,12 +119,12 @@ class HttpError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
 
-/** The ticket's agent worktree and base, for codemap. */
+/** The ticket's agent worktree and review base (the merge-base with its reference branch), for codemap. */
 function reviewTarget(id) {
   if (!codemap) throw new HttpError(400, 'codemap is not installed');
   const r = agents?.get(id);
   if (!r?.worktree || !fs.existsSync(r.worktree)) throw new HttpError(404, 'No worktree for this ticket');
-  return r;
+  return { worktree: r.worktree, base: agents.reviewBase(id) };
 }
 
 function addNotes(id, notes) {

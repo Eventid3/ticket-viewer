@@ -276,6 +276,7 @@ function renderCard(t) {
   const agent = agentOf(t);
   if (agent && !DONE.has(t.status)) foot.push(agentBadge(agent));
   if (agent?.processes?.length) foot.push(processBadge(agent.processes));
+  if (agent?.conflict) foot.push(conflictBadge(agent));
   if (t.type) foot.push(el('span', { class: 'badge' }, t.type));
   if (t.comments) foot.push(el('span', { class: 'badge', title: 'Comments' }, `💬 ${t.comments}`));
   if (t.checks.total) {
@@ -325,6 +326,12 @@ function agentBadge(a) {
 function processBadge(procs) {
   const title = procs.map(p => `${p.pid}: ${p.command}`).join('\n');
   return el('span', { class: 'badge processes', title }, `⚙ ${plural(procs.length, 'process')}`);
+}
+
+// A test merge of the ticket's branch into its reference branch fails.
+function conflictBadge(a) {
+  const title = `Merging ${a.branch} into ${a.ref} conflicts in:\n${a.conflict.files.join('\n')}`;
+  return el('span', { class: 'badge blocked', title }, `⚔ conflicts (${plural(a.conflict.files.length, 'file')})`);
 }
 
 function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
@@ -473,18 +480,22 @@ function renderAgent() {
     notes.value = state.notes[t.id] || '';
     const structure = wantsStructure(t);
     if (structure && state.structure?.id !== t.id) loadStructure(t.id, true);
+    // The merge-base with the reference branch, once the detail has loaded.
+    const since = (d?.changes?.base || a.base).slice(0, 8);
     review = el('div', { class: 'review' },
       el('div', { class: 'agent-actions' },
-        btn('⇆ Open diff in meld', { class: 'btn primary', title: `git difftool -d ${a.base.slice(0, 8)} in the worktree` }, () => api('/api/agent/diff', { id: t.id })),
+        btn('⇆ Open diff in meld', { class: 'btn primary', title: `git difftool -d ${since} in the worktree` }, () => api('/api/agent/diff', { id: t.id })),
         structure ? btn(state.structure?.opening ? '⌗ Opening structure diff…' : '⌗ Open structure diff', {
           class: 'btn primary', disabled: !!state.structure?.opening,
-          title: `codemap view: the structural changes since ${a.base.slice(0, 8)}, to mark OK or Flag`,
+          title: `codemap view: the structural changes since ${since}, to mark OK or Flag`,
         }, () => openStructureDiff(t)) : null,
-        btn('✓ Approve', { title: 'Mark resolved, stop the session and its worktree processes, and copy the merge command' }, async () => {
+        btn('✓ Approve', { title: `Mark resolved, stop the session and its worktree processes, and copy the command that merges ${a.branch} into ${a.ref || 'the branch you are on'}` }, async () => {
+          const conflict = a.conflict;
           const result = await moveTicket(t, 'resolved');
           if (!result) return;
-          // Copying shows its own toast, so repeat the stopped count in it.
-          if (await copy(mergeCommand(a), 'merge command') && result.stopped) toast(`Copied merge command${stoppedNote(result)}`);
+          // Copying shows its own toast, so repeat the stopped count and any merge conflict in it.
+          const warning = conflict ? ` · ⚔ it conflicts with ${a.ref} in ${plural(conflict.files.length, 'file')}` : '';
+          if (await copy(mergeCommand(a), 'merge command') && (result.stopped || warning)) toast(`Copied merge command${warning}${stoppedNote(result)}`);
         }),
         btn('↩ Send back to agent', { title: 'Resume the agent\'s session with your notes' }, () => {
           if (!notes.value.trim()) return toast('Write what should change first');
@@ -510,6 +521,7 @@ function renderAgent() {
       a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
     actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
     last,
+    a ? renderMerge(a) : null,
     review,
     a?.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
@@ -519,6 +531,16 @@ function renderAgent() {
     d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: busy },
       el('summary', {}, 'Agent activity'),
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
+}
+
+// Where the ticket's work will be merged, and the files a test merge into it conflicts in.
+function renderMerge(a) {
+  if (!a.worktree) return null;
+  if (!a.ref) return el('div', { class: 'muted merge-target', title: 'The main checkout was on a detached HEAD, or the branch is gone: no merge-conflict check, and diffs start where the ticket started' }, 'no reference branch');
+  if (!a.conflict) return el('div', { class: 'muted merge-target' }, 'Merges into ', el('code', {}, a.ref));
+  return el('div', { class: 'merge-conflict' },
+    el('div', {}, el('strong', {}, `⚔ Merge conflict with `), el('code', {}, a.ref), el('span', { class: 'muted' }, ` in ${plural(a.conflict.files.length, 'file')}`)),
+    el('ul', {}, a.conflict.files.map(f => el('li', {}, el('code', {}, f)))));
 }
 
 // Processes running in the ticket's worktree (servers, watchers, shells), each killable with its process group.

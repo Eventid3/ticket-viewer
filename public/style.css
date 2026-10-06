@@ -242,3 +242,7 @@ body {
 .process-list .command { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
 .process-list a.badge { color: var(--text); text-decoration: none; }
 .process-list a.badge:hover { border-color: var(--muted); }
+.merge-conflict { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--danger); border-radius: 6px; background: var(--danger-bg); }
+.merge-conflict strong { color: var(--danger); }
+.merge-conflict ul { margin: 0; padding-left: 18px; }
+.merge-conflict code { overflow-wrap: anywhere; }
