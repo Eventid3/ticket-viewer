@@ -53,7 +53,7 @@ async function loadProjects() {
 }
 
 // The project list again for its alert counts only; the select and the board stay as they are.
-// A burst of change events gives one fetch.
+// Only the counts are taken, so a late answer can't bring back a project removed meanwhile. A burst of change events gives one fetch.
 let alertsTimer = null;
 function refreshAlerts() {
   clearTimeout(alertsTimer);
@@ -61,7 +61,8 @@ function refreshAlerts() {
     try {
       const res = await fetch('/api/projects');
       if (!res.ok) return;
-      state.projects = (await res.json()).projects;
+      const counts = new Map((await res.json()).projects.map(p => [p.id, p]));
+      state.projects = state.projects?.map(p => counts.has(p.id) ? { ...p, review: counts.get(p.id).review, needsYou: counts.get(p.id).needsYou } : p) ?? null;
       renderProjectAlerts();
     } catch { /* the next change tries again */ }
   }, 300);
@@ -299,7 +300,8 @@ function renderProjectAlerts() {
   const others = availableProjects().filter(p => p.id !== state.project && (p.review > 0 || p.needsYou > 0));
   $('alerts').replaceChildren(...others.map(p => el('button', {
     class: 'alert', type: 'button',
-    title: `${p.name}: ${[p.review && `${plural(p.review, 'ticket')} in ready-for-review`, p.needsYou && `${plural(p.needsYou, 'agent')} need${p.needsYou === 1 ? 's' : ''} you`].filter(Boolean).join(', ')}. Switch to it`,
+    title: [p.review && `${plural(p.review, 'ticket')} to review`, p.needsYou && `${plural(p.needsYou, 'agent')} waiting on you`]
+      .filter(Boolean).join(', ') + ` in ${p.name}; switch to it`,
     onclick: () => switchProject(p.id),
   }, el('span', { class: 'alert-name' }, p.name),
     p.review ? el('span', { class: 'alert-review' }, `${p.review} to review`) : null,
