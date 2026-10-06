@@ -58,6 +58,12 @@ Several agents work in parallel, and once you merge one ticket another may no lo
 - On each poll, for every ticket in **claimed** or **ready-for-review** with a worktree, the board runs `git merge-tree --write-tree --name-only <reference branch> <ticket branch>` in the repo. It's a test merge that touches no worktree or index. The result is cached by the pair of commits, so it only re-runs when either branch moves. Resolved tickets aren't checked.
 - A failing test merge is a **merge conflict**: the card shows **⚔ conflicts (N files)**, and the Claude Code panel lists the files and names the reference branch. Otherwise the panel says which branch the ticket merges into. After you merge one ticket, the others' indicators update on the next poll.
 - **⚔ Resolve conflicts** hands the conflict to the agent. It shows on a ticket in **ready-for-review**, or a **claimed** one whose agent isn't working, while there is a merge conflict; it's hidden while the agent is running or waiting on you. It moves the ticket to claimed and resumes the agent's session with a fixed prompt: merge the reference branch into your branch (`git merge`, never rebase), resolve the conflicts in the listed files, run the tests, commit, and end your turn. Without a session to resume, it starts a new one in the same worktree with the same prompt, plus the ticket to read for context. Nothing is added to the ticket's `## Comments`. Once the agent ends its turn with the merge committed, the ticket goes back to ready-for-review and the next poll clears the indicator.
+- **⇆ Resolve in meld** is the manual way, for small conflicts (a lock file, two imports). It shows under the same conditions as ⚔ Resolve conflicts, and the ticket stays in its lane.
+  - It refuses to run while the worktree has uncommitted changes to tracked files; commit or stash them yourself. Untracked files don't count.
+  - It runs `git merge --no-edit <reference branch>` in the worktree. A clean merge (the reference branch moved on since the last poll) is committed and that's it.
+  - On conflicts it runs `git mergetool --tool=meld` in the worktree, without waiting for it, like Open diff in meld. `--difftool` picks the mergetool too. meld opens one conflicted file at a time; saving and closing it marks the file resolved. The board turns off mergetool's `.orig` backups.
+  - While the worktree is mid-merge (`MERGE_HEAD` exists), the card shows **⚔ merge in progress (N unresolved)** instead of the conflict, and the panel offers **✓ Finish merge** (`git commit --no-edit`, refused while any file is still unmerged), **✕ Abort merge** (`git merge --abort`, which puts the branch back as it was) and **⇆ Reopen meld** (for files you closed without resolving). This shows in any lane, also for a merge you started yourself in a terminal. The buttons are hidden while the agent is running or waiting on you, since it may be the one merging.
+  - A merge commit you make this way doesn't count as the agent's work: an agent that was waiting for a reply stays that way rather than moving the ticket to ready-for-review.
 - With a detached HEAD at start, or when the reference branch no longer exists, the check is off and the panel says **no reference branch**; review diffs then start from the commit the ticket's branch was created from.
 
 ### Agent hostname
@@ -94,7 +100,7 @@ When `codemap` is on your PATH at startup, a ticket in review also gets a struct
 
 Sessions start in auto mode (`--permission-mode auto`): Claude Code's classifier approves routine actions, so the agent rarely stops to ask, and it still asks before risky ones. For more control, start the board with `--permission-mode acceptEdits`. Then only file edits are automatic, and anything not in your allowlist waits for you to attach and answer.
 
-Options: `--claude <cmd>`, `--permission-mode <mode>`, `--difftool <tool>` (any `git difftool` tool name).
+Options: `--claude <cmd>`, `--permission-mode <mode>`, `--difftool <tool>` (any tool name both `git difftool` and `git mergetool` know; it picks both).
 
 ## Status changes
 

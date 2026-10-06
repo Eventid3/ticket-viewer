@@ -554,3 +554,144 @@ test('resolving conflicts is refused without a merge conflict or while the agent
   await agents.poll();
   await assert.rejects(agents.resolveConflicts('feat/02-b.md', ticketB), /already running/i);
 });
+
+// --- resolving a merge conflict by hand ---------------------------------------------------
+
+// Like setupConflictB, with a stand-in mergetool: `fake` runs whatever `tool(cmd)` sets, and touches tool-ran when done.
+async function setupManualMerge() {
+  const s = await setupConflictB();
+  git(s.repo, 'config', 'user.name', 't');
+  git(s.repo, 'config', 'user.email', 't@t');
+  git(s.repo, 'config', 'mergetool.fake.trustExitCode', 'true');
+  const ran = path.join(s.root, 'tool-ran');
+  const tool = cmd => { fs.rmSync(ran, { force: true }); git(s.repo, 'config', 'mergetool.fake.cmd', `${cmd}; status=$?; touch '${ran}'; exit $status`); };
+  tool('false'); // leaves the file unresolved, like closing meld without saving
+  const agents = createAgents({ scratchRoot: path.join(s.repo, '.scratch'), cli: s.cli, processes: null, difftool: 'fake', onConflicts: id => s.changes.push(id) });
+  await agents.poll();
+  const toolRan = async () => {
+    for (let i = 0; i < 200 && !fs.existsSync(ran); i++) await new Promise(r => setTimeout(r, 25));
+    assert.ok(fs.existsSync(ran), 'the mergetool ran');
+    await new Promise(r => setTimeout(r, 100)); // let git mergetool finish after the tool exits
+  };
+  return { ...s, agents, tool, toolRan, B: 'feat/02-b.md' };
+}
+
+const mergeHead = cwd => { try { return git(cwd, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'); } catch { return null; } };
+
+test('merging by hand: conflicts leave the worktree mid-merge and open the mergetool on them', async () => {
+  const { agents, b, tool, toolRan, B } = await setupManualMerge();
+  tool('false');
+  const before = git(b.worktree, 'rev-parse', 'HEAD');
+  const result = await agents.merge(B);
+  assert.deepEqual(result, { clean: false, unresolved: 1 });
+  assert.ok(mergeHead(b.worktree), 'mid-merge');
+  assert.equal(git(b.worktree, 'rev-parse', 'HEAD'), before, 'nothing committed yet');
+  assert.deepEqual(agents.get(B).merging, { unresolved: 1 });
+  await toolRan();
+});
+
+test('a resolving mergetool marks the files resolved, and Finish commits the merge', async () => {
+  const { repo, agents, b, tool, toolRan, B } = await setupManualMerge();
+  tool('cp "$REMOTE" "$MERGED"');
+  await agents.merge(B);
+  await toolRan();
+  await agents.poll();
+  assert.deepEqual(agents.get(B).merging, { unresolved: 0 });
+
+  await agents.finishMerge(B);
+  assert.equal(mergeHead(b.worktree), null);
+  assert.equal(git(b.worktree, 'rev-list', '--parents', '-n', '1', 'HEAD').split(' ').length, 3, 'a merge commit');
+  assert.equal(git(b.worktree, 'status', '--porcelain'), '', 'no mergetool backups left behind');
+  assert.equal(fs.readFileSync(path.join(b.worktree, 'shared.txt'), 'utf8'), fs.readFileSync(path.join(repo, 'shared.txt'), 'utf8'));
+  assert.equal(agents.get(B).merging, null);
+  await agents.poll();
+  assert.equal(agents.get(B).conflict, null, 'the conflict is gone');
+});
+
+test('Finish is refused while files are unmerged, and works once they are resolved', async () => {
+  const { agents, b, toolRan, B } = await setupManualMerge();
+  await agents.merge(B);
+  await toolRan();
+  await assert.rejects(agents.finishMerge(B), /1 file still unmerged/i);
+  assert.ok(mergeHead(b.worktree), 'still mid-merge');
+
+  fs.writeFileSync(path.join(b.worktree, 'shared.txt'), 'both\n');
+  git(b.worktree, 'add', 'shared.txt');
+  await agents.finishMerge(B);
+  assert.equal(mergeHead(b.worktree), null);
+});
+
+test('Reopen meld runs the mergetool again on what is still unmerged', async () => {
+  const { agents, tool, toolRan, B } = await setupManualMerge();
+  await agents.merge(B);
+  await toolRan();
+  tool('cp "$REMOTE" "$MERGED"');
+  agents.openMergetool(B);
+  await toolRan();
+  await agents.poll();
+  assert.deepEqual(agents.get(B).merging, { unresolved: 0 });
+});
+
+test('Abort restores the branch as it was before the merge', async () => {
+  const { agents, b, toolRan, B } = await setupManualMerge();
+  const before = git(b.worktree, 'rev-parse', 'HEAD');
+  await agents.merge(B);
+  await toolRan();
+  await agents.abortMerge(B);
+  assert.equal(mergeHead(b.worktree), null);
+  assert.equal(git(b.worktree, 'rev-parse', 'HEAD'), before);
+  assert.equal(git(b.worktree, 'status', '--porcelain'), '');
+  assert.equal(agents.get(B).merging, null);
+  assert.deepEqual(agents.get(B).conflict, { files: ['shared.txt'] }, 'the conflict is still there');
+});
+
+test('a clean merge is committed and leaves the agent state alone', async () => {
+  const { repo, cli, agents, b, B, ticketB } = await setupManualMerge();
+  // An agent that replied without committing anything since.
+  await agents.resume(B, ticketB, 'Any questions?');
+  cli.set(agents.get(B).bgId, { status: 'idle', state: 'done' });
+  await agents.poll();
+  assert.equal(agents.get(B).state, 'idle');
+  // The reference branch moves on after the poll found the conflict: A's work is undone on main.
+  git(repo, 'revert', '--no-edit', 'HEAD');
+  const before = git(b.worktree, 'rev-parse', 'HEAD');
+  assert.deepEqual(await agents.merge(B), { clean: true });
+  assert.equal(mergeHead(b.worktree), null);
+  assert.equal(git(b.worktree, 'rev-parse', 'HEAD^1'), before);
+  assert.equal(git(b.worktree, 'rev-parse', 'HEAD^2'), git(repo, 'rev-parse', 'main'));
+  await agents.poll();
+  assert.equal(agents.get(B).state, 'idle', 'the merge commit is not the agent\'s work');
+});
+
+test('merging by hand is refused with uncommitted changes, without a conflict, mid-merge, or while the agent is busy', async () => {
+  const { cli, agents, b, toolRan, B } = await setupManualMerge();
+  fs.writeFileSync(path.join(b.worktree, 'shared.txt'), 'edited\n');
+  await assert.rejects(agents.merge(B), /uncommitted changes/i);
+  assert.equal(mergeHead(b.worktree), null);
+  git(b.worktree, 'checkout', 'shared.txt');
+
+  cli.set('bg1', { status: 'idle', state: 'done' });
+  await agents.poll();
+  await assert.rejects(agents.merge(ID), /no merge conflict/i);
+  await assert.rejects(agents.finishMerge(B), /no merge in progress/i);
+  await assert.rejects(agents.abortMerge(B), /no merge in progress/i);
+
+  await agents.merge(B);
+  await toolRan();
+  await assert.rejects(agents.merge(B), /already in progress/i);
+
+  cli.set('bg2', { status: 'busy', state: 'running' });
+  await agents.poll();
+  await assert.rejects(agents.abortMerge(B), /agent is running/i);
+  await assert.rejects(agents.finishMerge(B), /agent is running/i);
+});
+
+test('a merge started outside the board shows as in progress on the next poll', async () => {
+  const { agents, b, B, changes } = await setupManualMerge();
+  assert.equal(agents.get(B).merging, null);
+  try { git(b.worktree, 'merge', '--no-edit', 'main'); } catch { /* conflicts */ }
+  changes.length = 0;
+  await agents.poll();
+  assert.deepEqual(agents.get(B).merging, { unresolved: 1 });
+  assert.deepEqual(changes, [B], 'tells the board');
+});

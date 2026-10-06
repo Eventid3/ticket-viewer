@@ -32,7 +32,7 @@ Options:
       --no-open              Don't open a browser
       --claude <cmd>         Claude Code executable for background agents (default claude)
       --permission-mode <m>  Permission mode for background agents (default auto)
-      --difftool <tool>      git difftool used to review a ticket's changes (default meld)
+      --difftool <tool>      git difftool and mergetool for reviewing and merging by hand (default meld)
   -h, --help                 Show this help`;
 
 function parseArgs(argv) {
@@ -159,6 +159,20 @@ async function resolveConflicts(id) {
   await claimWhile(t, file => agents.resolveConflicts(id, file));
 }
 
+// Merging the reference branch by hand in the ticket's worktree; the ticket stays in its lane.
+const MERGE_ACTIONS = {
+  '/api/agent/merge': id => agents.merge(id),
+  '/api/agent/merge/finish': id => agents.finishMerge(id),
+  '/api/agent/merge/abort': id => agents.abortMerge(id),
+  '/api/agent/merge/meld': id => agents.openMergetool(id),
+};
+
+async function mergeByHand(action, id) {
+  if (!agents?.get(id)) throw new HttpError(404, 'No agent for this ticket');
+  try { return (await action(id)) || {}; } catch (e) { throw new HttpError(409, e.message); }
+  finally { notifyChange(); }
+}
+
 // The ticket, when it is in one of `statuses` and no agent is working on it.
 function agentTicket(id, statuses, expected) {
   if (!agents) throw new HttpError(400, 'Agents need the project to be a git repository');
@@ -274,6 +288,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/move') return send(res, 200, { ok: true, ...await move(id, to, notes) });
       else if (url.pathname === '/api/agent/start') await startAgent(id);
       else if (url.pathname === '/api/agent/resolve-conflicts') await resolveConflicts(id);
+      else if (MERGE_ACTIONS[url.pathname]) return send(res, 200, { ok: true, ...await mergeByHand(MERGE_ACTIONS[url.pathname], id) });
       else if (url.pathname === '/api/agent/stop') { if (!(await agents?.stop(id))) throw new HttpError(409, 'No agent session'); }
       else if (url.pathname === '/api/agent/kill') {
         if (!agents?.get(id)) throw new HttpError(404, 'No agent for this ticket');

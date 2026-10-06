@@ -276,7 +276,8 @@ function renderCard(t) {
   const agent = agentOf(t);
   if (agent && !DONE.has(t.status)) foot.push(agentBadge(agent));
   if (agent?.processes?.length) foot.push(processBadge(agent.processes));
-  if (agent?.conflict) foot.push(conflictBadge(agent));
+  if (agent?.merging) foot.push(mergingBadge(agent));
+  else if (agent?.conflict) foot.push(conflictBadge(agent));
   if (t.type) foot.push(el('span', { class: 'badge' }, t.type));
   if (t.comments) foot.push(el('span', { class: 'badge', title: 'Comments' }, `💬 ${t.comments}`));
   if (t.checks.total) {
@@ -332,6 +333,12 @@ function processBadge(procs) {
 function conflictBadge(a) {
   const title = `Merging ${a.branch} into ${a.ref} conflicts in:\n${a.conflict.files.join('\n')}`;
   return el('span', { class: 'badge blocked', title }, `⚔ conflicts (${plural(a.conflict.files.length, 'file')})`);
+}
+
+// The ticket's worktree is mid-merge (MERGE_HEAD exists), whoever started the merge.
+const mergingText = a => `⚔ merge in progress (${a.merging.unresolved} unresolved)`;
+function mergingBadge(a) {
+  return el('span', { class: 'badge merging', title: `Merging ${a.ref || 'a branch'} into ${a.branch} in the worktree: finish or abort it in the drawer` }, mergingText(a));
 }
 
 function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
@@ -464,12 +471,18 @@ function renderAgent() {
   if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${needsYou ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
   if (a?.bgId && a.state !== 'stopped' && a.state !== 'failed') actions.push(btn('■ Stop agent', { title: 'Stop the session; its conversation is kept' }, () => api('/api/agent/stop', { id: t.id })));
   // The server checks the same before resolving.
-  if (['claimed', 'ready-for-review'].includes(t.status) && a?.conflict && !busy) {
+  if (['claimed', 'ready-for-review'].includes(t.status) && a?.conflict && !a.merging && !busy) {
     actions.push(btn('⚔ Resolve conflicts', {
       class: 'btn primary',
       title: `Move the ticket to claimed and have the agent merge ${a.ref} into ${a.branch} (merge, not rebase), resolve ${plural(a.conflict.files.length, 'file')}, run the tests and commit. Nothing is added to the ticket's ## Comments`,
     }, async () => {
       if (await api('/api/agent/resolve-conflicts', { id: t.id })) toast(`${label(t)}: agent is resolving the merge conflict · claude attach to watch`);
+    }));
+    actions.push(btn('⇆ Resolve in meld', {
+      title: `git merge --no-edit ${a.ref} in the worktree, then git mergetool --tool=meld on the conflicts. Refused with uncommitted changes. The ticket stays in its lane`,
+    }, async () => {
+      const result = await api('/api/agent/merge', { id: t.id });
+      if (result) toast(result.clean ? `${label(t)}: merged ${a.ref} cleanly and committed` : `${label(t)}: ${plural(result.unresolved, 'file')} to resolve · opening meld`);
     }));
   }
   if (t.status === 'claimed' && a && !busy) {
@@ -531,7 +544,7 @@ function renderAgent() {
       a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
     actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
     last,
-    a ? renderMerge(a) : null,
+    a ? renderMerge(t, a, busy) : null,
     review,
     a?.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
@@ -543,9 +556,27 @@ function renderAgent() {
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
 }
 
-// Where the ticket's work will be merged, and the files a test merge into it conflicts in.
-function renderMerge(a) {
+// Where the ticket's work will be merged, and the files a test merge into it conflicts in;
+// or, while the worktree is mid-merge, how far resolving it has come and how to finish it.
+function renderMerge(t, a, busy) {
   if (!a.worktree) return null;
+  if (a.merging) {
+    const { unresolved } = a.merging;
+    // The server refuses these while the agent is running, as it may be the one merging.
+    const actions = busy ? null : el('div', { class: 'agent-actions' },
+      btn('✓ Finish merge', {
+        class: 'btn primary', disabled: unresolved > 0,
+        title: unresolved ? `${plural(unresolved, 'file')} still unmerged: resolve them in meld first` : 'git commit --no-edit in the worktree',
+      }, async () => { if (await api('/api/agent/merge/finish', { id: t.id })) toast(`${label(t)}: merge committed`); }),
+      btn('✕ Abort merge', { title: 'git merge --abort: the branch and worktree go back to how they were before the merge' },
+        async () => { if (await api('/api/agent/merge/abort', { id: t.id })) toast(`${label(t)}: merge aborted`); }),
+      btn('⇆ Reopen meld', { disabled: unresolved === 0, title: unresolved ? 'git mergetool --tool=meld on the files still unmerged' : 'Every file is resolved' },
+        () => api('/api/agent/merge/meld', { id: t.id })));
+    return el('div', { class: 'merge-conflict merging' },
+      el('div', {}, el('strong', {}, mergingText(a)), a.ref ? el('span', { class: 'muted' }, ' merging ', el('code', {}, a.ref)) : null),
+      busy ? el('div', { class: 'muted' }, 'The agent is working in this worktree') : null,
+      actions);
+  }
   if (!a.ref) return el('div', { class: 'muted merge-target', title: 'The main checkout was on a detached HEAD, or the branch is gone: no merge-conflict check, and diffs start where the ticket started' }, 'no reference branch');
   if (!a.conflict) return el('div', { class: 'muted merge-target' }, 'Merges into ', el('code', {}, a.ref));
   return el('div', { class: 'merge-conflict' },

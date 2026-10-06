@@ -246,3 +246,6 @@ body {
 .merge-conflict strong { color: var(--danger); }
 .merge-conflict ul { margin: 0; padding-left: 18px; }
 .merge-conflict code { overflow-wrap: anywhere; }
+.badge.merging { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.merge-conflict.merging { border-color: var(--warn); background: var(--warn-bg); }
+.merge-conflict.merging strong { color: var(--warn); }
