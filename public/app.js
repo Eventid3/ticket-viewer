@@ -7,7 +7,7 @@ const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-fo
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
 const $ = id => document.getElementById(id);
-const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false, detail: null, dragging: null, structure: null, notes: {} };
+const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {} };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
@@ -91,6 +91,7 @@ async function load() {
   if (project !== state.project) return; // another project was picked meanwhile
   if (!res.ok) {
     toast(body.error || `Request failed (${res.status})`);
+    state.toAlerts = false;
     // Unknown or no longer available: the project list says what's left. Other errors stay put rather than retry.
     if (res.status !== 404 && res.status !== 409) return;
     state.project = null;
@@ -100,6 +101,12 @@ async function load() {
   }
   state.data = body;
   const feats = state.data.features;
+  // Opened from a project alert: the feature whose tickets the alert counts, or all of them when several have some.
+  if (state.toAlerts) {
+    state.toAlerts = false;
+    const alerting = feats.filter(f => f.tickets.some(t => t.status === 'ready-for-review' || t.needsYou));
+    if (alerting.length) { state.feature = alerting.length > 1 ? ALL : alerting[0].name; writeHash(); }
+  }
   // Without a valid pick the board opens on the first feature with work left, if there is one.
   if (state.feature !== ALL && !feats.some(f => f.name === state.feature)) state.feature = (feats.find(f => !f.completed) ?? feats[0]).name;
   renderFeatureSelect();
@@ -303,7 +310,7 @@ function renderProjectAlerts() {
     class: 'alert', type: 'button',
     title: [p.review && `${plural(p.review, 'ticket')} to review`, p.needsYou && `${plural(p.needsYou, 'agent')} waiting on you`]
       .filter(Boolean).join(', ') + ` in ${p.name}; switch to it`,
-    onclick: () => switchProject(p.id),
+    onclick: () => switchProject(p.id, true),
   }, el('span', { class: 'alert-name' }, p.name),
     p.review ? el('span', { class: 'alert-review' }, `${p.review} to review`) : null,
     p.needsYou ? el('span', { class: 'alert-needs-you' }, `⚠ ${p.needsYou}`) : null)));
@@ -923,8 +930,10 @@ function connectEvents() {
 }
 
 // Picking a project yourself, in the select or from its alert.
-function switchProject(id) {
+// `toAlerts`: opened from its project alert, so the board lands on what the alert is about.
+function switchProject(id, toAlerts = false) {
   selectProject(id);
+  state.toAlerts = toAlerts;
   if (state.project) rememberProject(state.project);
   renderProjectSelect();
   renderFeatureSelect();
