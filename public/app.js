@@ -91,15 +91,9 @@ async function load() {
 }
 
 function agentOf(t) { return state.data.agents?.[t.id] || null; }
-// The session is working or waiting on you, so it may still change the worktree.
-function agentBusy(a) { return !!a && ['starting', 'running', 'waiting'].includes(a.state); }
 
-// Status changes the board may make itself (the server enforces the same list).
-function canMove(t, to) {
-  if (!(state.data.moves[t.status] || []).includes(to)) return false;
-  if (t.status === 'claimed' && agentBusy(agentOf(t))) return false;
-  return !(to === 'claimed' && (t.blocked || !state.data.agents));
-}
+// Status changes the board may make itself; the server decides them per ticket (its ticket actions).
+function canMove(t, to) { return !!t.actions.moves[to]?.ok; }
 
 // The response body, with `error` set when the request failed. Every request names the selected project.
 async function request(path, body, method = 'POST') {
@@ -141,7 +135,7 @@ async function loadDetail() {
   const res = await fetch(`/api/agent?${projectQuery(t.id)}`);
   state.detail = res.ok ? { id: t.id, ...(await res.json()) } : null;
   keepDrawerView(renderAgent);
-  if (agentBusy(state.detail?.record)) loadDetail.timer = setTimeout(loadDetail, 3000);
+  if (state.detail?.record?.busy) loadDetail.timer = setTimeout(loadDetail, 3000);
 }
 
 // codemap's structure diff for a ticket in review: counts per group and flagged entries, loaded on demand.
@@ -369,7 +363,7 @@ function renderCard(t) {
   }
 
   const next = nextCommand(t);
-  const movable = (state.data.moves[t.status] || []).some(to => canMove(t, to));
+  const movable = Object.values(t.actions.moves).some(m => m.ok);
   const card = el('div', {
     class: 'card' + (state.ticket === t.id ? ' selected' : ''),
     style: `--lane-color:${laneColor(t.status)}`,
@@ -542,35 +536,37 @@ function renderAgent() {
   if (!t || (!a && t.status !== 'ready-for-agent')) { box.hidden = true; box.replaceChildren(); return; }
   box.hidden = false;
 
-  const busy = agentBusy(a);
+  // Which buttons show, and which are disabled and why, are the server's ticket actions.
+  const { start, stop, resolveConflicts, mergeByHand, moves } = t.actions;
   const actions = [];
-  if (t.status === 'ready-for-agent') {
-    const why = !state.data.agents ? 'Agents need the project to be a git repository' : t.blocked ? `Blocked by ${t.openBlockers.join(', ')}` : null;
-    const verb = a?.sessionId ? '▶ Continue agent' : '▶ Start agent';
-    actions.push(btn(verb, { class: 'btn primary', disabled: !!why, title: why || 'Claim the ticket and run /implement as a background session' }, () => moveTicket(t, 'claimed')));
+  if (start && t.status === 'ready-for-agent') {
+    actions.push(btn(start.resume ? '▶ Continue agent' : '▶ Start agent', refused(start, { class: 'btn primary', title: 'Claim the ticket and run /implement as a background session' }), () => moveTicket(t, 'claimed')));
   }
   // Start/Continue and meld are the next step in their lanes; otherwise attaching is, when the agent needs you.
   const needsYou = (a?.state === 'waiting' || a?.state === 'idle') && !['ready-for-agent', 'ready-for-review'].includes(t.status);
   if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${needsYou ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
-  if (a?.bgId && a.state !== 'stopped' && a.state !== 'failed') actions.push(btn('■ Stop agent', { title: 'Stop the session; its conversation is kept' }, () => api('/api/agent/stop', { id: t.id })));
-  // The server checks the same before resolving.
-  if (['claimed', 'ready-for-review'].includes(t.status) && a?.conflict && !a.merging && !busy) {
-    actions.push(btn('⚔ Resolve conflicts', {
+  if (stop) actions.push(btn('■ Stop agent', { title: 'Stop the session; its conversation is kept' }, () => api('/api/agent/stop', { id: t.id })));
+  if (resolveConflicts) {
+    actions.push(btn('⚔ Resolve conflicts', refused(resolveConflicts, {
       class: 'btn primary',
       title: `Move the ticket to claimed and have the agent merge ${a.ref} into ${a.branch} (merge, not rebase), resolve ${plural(a.conflict.files.length, 'file')}, run the tests and commit. Nothing is added to the ticket's ## Comments`,
-    }, async () => {
+    }), async () => {
       if (await api('/api/agent/resolve-conflicts', { id: t.id })) toast(`${label(t)}: agent is resolving the merge conflict · claude attach to watch`);
     }));
-    actions.push(btn('⇆ Resolve in meld', {
+  }
+  if (mergeByHand) {
+    actions.push(btn('⇆ Resolve in meld', refused(mergeByHand, {
       title: `git merge --no-edit ${a.ref} in the worktree, then git mergetool --tool=meld on the conflicts. Refused with uncommitted changes. The ticket stays in its lane`,
-    }, async () => {
+    }), async () => {
       const result = await api('/api/agent/merge', { id: t.id });
       if (result) toast(result.clean ? `${label(t)}: merged ${a.ref} cleanly and committed` : `${label(t)}: ${plural(result.unresolved, 'file')} to resolve · opening meld`);
     }));
   }
-  if (t.status === 'claimed' && a && !busy) {
-    actions.push(btn('↻ Continue agent', { title: 'Resume the session in the background and tell it to carry on' }, () => api('/api/agent/start', { id: t.id })));
-    actions.push(btn('Back to ready-for-agent', {}, () => moveTicket(t, 'ready-for-agent')));
+  if (start && t.status === 'claimed') {
+    actions.push(btn('↻ Continue agent', refused(start, { title: 'Resume the session in the background and tell it to carry on' }), () => api('/api/agent/start', { id: t.id })));
+  }
+  if (moves['ready-for-agent'] && t.status === 'claimed') {
+    actions.push(btn('Back to ready-for-agent', refused(moves['ready-for-agent'], {}), () => moveTicket(t, 'ready-for-agent')));
   }
 
   // Loaded afresh each time the ticket comes (back) into review.
@@ -594,7 +590,7 @@ function renderAgent() {
           class: 'btn primary', disabled: !!state.structure?.opening,
           title: `codemap view: the structural changes since ${since}, to mark OK or Flag`,
         }, () => openStructureDiff(t)) : null,
-        btn('✓ Approve', { title: `Mark resolved, stop the session and its worktree processes, and copy the command that merges ${a.branch} into ${a.ref || 'the branch you are on'}` }, async () => {
+        btn('✓ Approve', refused(moves.resolved, { title: `Mark resolved, stop the session and its worktree processes, and copy the command that merges ${a.branch} into ${a.ref || 'the branch you are on'}` }), async () => {
           const conflict = a.conflict;
           const result = await moveTicket(t, 'resolved');
           if (!result) return;
@@ -603,7 +599,7 @@ function renderAgent() {
           const copied = await copy(mergeCommand(a), 'merge command');
           if (result.stopped || warning) toast(`${copied ? 'Copied merge command' : 'Could not copy merge command'}${warning}${stoppedNote(result)}`);
         }),
-        btn('↩ Send back to agent', { title: 'Resume the agent\'s session with your notes' }, () => {
+        btn('↩ Send back to agent', refused(moves.claimed, { title: 'Resume the agent\'s session with your notes' }), () => {
           if (!notes.value.trim()) return toast('Write what should change first');
           moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
         })),
@@ -627,37 +623,33 @@ function renderAgent() {
       a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
     actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
     last,
-    a ? renderMerge(t, a, busy) : null,
+    a ? renderMerge(t, a) : null,
     review,
     a?.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
       el('summary', {}, `${changes.commits.length} commit${changes.commits.length === 1 ? '' : 's'}${changes.dirty ? ' · uncommitted changes' : ''}`),
       changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
       changes.stat ? el('pre', {}, changes.stat) : null) : null,
-    d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: busy },
+    d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: !!a?.busy },
       el('summary', {}, 'Agent activity'),
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
 }
 
 // Where the ticket's work will be merged, and the files a test merge into it conflicts in;
 // or, while the worktree is mid-merge, how far resolving it has come and how to finish it.
-function renderMerge(t, a, busy) {
+function renderMerge(t, a) {
   if (!a.worktree) return null;
   if (a.merging) {
-    const { unresolved } = a.merging;
-    // The server refuses these while the agent is running, as it may be the one merging.
-    const actions = busy ? null : el('div', { class: 'agent-actions' },
-      btn('✓ Finish merge', {
-        class: 'btn primary', disabled: unresolved > 0,
-        title: unresolved ? `${plural(unresolved, 'file')} still unmerged: resolve them in meld first` : 'git commit --no-edit in the worktree',
-      }, async () => { if (await api('/api/agent/merge/finish', { id: t.id })) toast(`${label(t)}: merge committed`); }),
-      btn('✕ Abort merge', { title: 'git merge --abort: the branch and worktree go back to how they were before the merge' },
+    const { finishMerge, abortMerge, reopenMeld } = t.actions;
+    const actions = el('div', { class: 'agent-actions' },
+      btn('✓ Finish merge', refused(finishMerge, { class: 'btn primary', title: 'git commit --no-edit in the worktree' }),
+        async () => { if (await api('/api/agent/merge/finish', { id: t.id })) toast(`${label(t)}: merge committed`); }),
+      btn('✕ Abort merge', refused(abortMerge, { title: 'git merge --abort: the branch and worktree go back to how they were before the merge' }),
         async () => { if (await api('/api/agent/merge/abort', { id: t.id })) toast(`${label(t)}: merge aborted`); }),
-      btn('⇆ Reopen meld', { disabled: unresolved === 0, title: unresolved ? 'git mergetool --tool=meld on the files still unmerged' : 'Every file is resolved' },
+      btn('⇆ Reopen meld', refused(reopenMeld, { title: 'git mergetool --tool=meld on the files still unmerged' }),
         () => api('/api/agent/merge/meld', { id: t.id })));
     return el('div', { class: 'merge-conflict merging' },
       el('div', {}, el('strong', {}, mergingText(a)), a.ref ? el('span', { class: 'muted' }, ' merging ', el('code', {}, a.ref)) : null),
-      busy ? el('div', { class: 'muted' }, 'The agent is working in this worktree') : null,
       actions);
   }
   if (!a.ref) return el('div', { class: 'muted merge-target', title: 'The main checkout was on a detached HEAD, or the branch is gone: no merge-conflict check, and diffs start where the ticket started' }, 'no reference branch');
@@ -720,6 +712,8 @@ function renderStructure(t, notes) {
 }
 
 function btn(text, attrs, onclick) { return el('button', { class: 'btn', ...attrs, onclick }, text); }
+// A ticket action's button attributes: disabled when refused, with the reason as its tooltip.
+function refused(action, attrs) { return { ...attrs, disabled: !action.ok, title: action.why || attrs.title }; }
 
 function toast(msg) {
   const t = $('toast');

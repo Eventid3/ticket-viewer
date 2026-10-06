@@ -240,6 +240,45 @@ test('a second start while the first agent is still starting is refused', async 
   assert.equal(s.cli.calls.length, 1);
 });
 
+test('every ticket action route refuses with the ticket action\'s reason', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { status: 'claimed', gitRepo: true })] });
+  t.after(() => s.board.close());
+  const id = 'feat/01-a.md';
+  const refusals = [
+    ['/api/move', { to: 'wontfix' }, /use \/triage/],
+    ['/api/agent/start', {}, /not ready-for-agent/],
+    ['/api/agent/stop', {}, /No agent session/],
+    ['/api/agent/resolve-conflicts', {}, /No merge conflict/],
+    ['/api/agent/merge', {}, /No merge conflict/],
+    ['/api/agent/merge/finish', {}, /No merge in progress/],
+    ['/api/agent/merge/abort', {}, /No merge in progress/],
+    ['/api/agent/merge/meld', {}, /No merge in progress/],
+  ];
+  for (const [route, body, why] of refusals) {
+    const res = await s.post(route, { project: 'shop', id, ...body });
+    assert.equal(res.status, 409, route);
+    assert.match(res.body.error, why, route);
+  }
+  assert.equal((await s.post('/api/agent/start', { project: 'shop', id: 'feat/99-none.md' })).status, 404);
+});
+
+test('tickets carry their ticket actions, with the reason a route refuses them', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  s.cli.held = [];
+  const starting = s.post('/api/agent/start', { project: 'shop', id: 'feat/01-a.md' });
+  while (!s.cli.held.length) await new Promise(r => setTimeout(r, 5));
+  const [ticket] = (await s.get('/api/tickets?project=shop')).body.features[0].tickets;
+  assert.equal(ticket.status, 'claimed');
+  assert.deepEqual(ticket.actions.moves['ready-for-agent'], { ok: false, why: 'Stop the agent first' });
+  const res = await s.post('/api/move', { project: 'shop', id: 'feat/01-a.md', to: 'ready-for-agent' });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.error, ticket.actions.moves['ready-for-agent'].why);
+  s.cli.held.forEach(release => release());
+  s.cli.held = null;
+  await starting;
+});
+
 test('a project that is not a git repo has no agents, and starting one says why', async t => {
   const s = await setup({ projects: [r => makeRepo(r, 'shop')] });
   t.after(() => s.board.close());
