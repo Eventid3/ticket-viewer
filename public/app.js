@@ -286,12 +286,12 @@ function renderFeatureSelect() {
   const feats = state.data.features;
   // Features with work left first, then the completed ones, greyed out; each group stays alphabetical as the server sent it.
   const option = f => el('option', { value: f.name, class: f.completed ? 'completed' : null }, `${f.name} (${f.tickets.length})`);
-  const open = feats.filter(f => !f.completed), completed = feats.filter(f => f.completed);
+  const withWork = feats.filter(f => !f.completed), done = feats.filter(f => f.completed);
   sel.replaceChildren(
     ...(feats.length > 1 ? [el('option', { value: ALL }, 'All features')] : []),
-    ...open.map(option),
-    ...(open.length && completed.length ? [el('option', { disabled: true }, '── completed ──')] : []),
-    ...completed.map(option),
+    ...withWork.map(option),
+    ...(withWork.length && done.length ? [el('option', { disabled: true }, '── completed ──')] : []),
+    ...done.map(option),
   );
   sel.value = state.feature;
 }
