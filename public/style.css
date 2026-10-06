@@ -253,6 +253,17 @@ body {
 
 /* Project picker: unavailable projects are listed but can't be picked. */
 .topbar select option:disabled { color: var(--muted); }
+/* Project alerts: other projects with tickets to review (that lane's colour) or agents that need you (the ⚠ needs you look). */
+.alerts { display: contents; }
+.alert {
+  display: inline-flex; align-items: center; gap: 6px; padding: 1px 4px 1px 9px; border-radius: 999px; cursor: pointer;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); font: inherit; font-size: 12px; line-height: 20px;
+}
+.alert:hover, .alert:focus-visible { border-color: var(--muted); }
+.alert-name { font-weight: 600; }
+.alert-review, .alert-needs-you { padding: 0 7px; border-radius: 999px; font-weight: 500; white-space: nowrap; }
+.alert-review { color: #fff; background: var(--s-ready-for-review); }
+.alert-needs-you { color: var(--a-text); background: var(--a-waiting); }
 .board-empty { margin: 48px auto; max-width: 440px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 12px; }
 
 /* Add project dialog */
