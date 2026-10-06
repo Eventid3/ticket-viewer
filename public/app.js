@@ -52,6 +52,21 @@ async function loadProjects() {
   if (projectsDialogOpen()) renderProjectsDialog();
 }
 
+// The project list again for its alert counts only; the select and the board stay as they are.
+// A burst of change events gives one fetch.
+let alertsTimer = null;
+function refreshAlerts() {
+  clearTimeout(alertsTimer);
+  alertsTimer = setTimeout(async () => {
+    try {
+      const res = await fetch('/api/projects');
+      if (!res.ok) return;
+      state.projects = (await res.json()).projects;
+      renderProjectAlerts();
+    } catch { /* the next change tries again */ }
+  }, 300);
+}
+
 // Switches the board to project `id`. The feature and open ticket start over, unless no project was selected
 // yet: then they came from the URL hash and are kept while they exist in that project.
 function selectProject(id) {
@@ -276,6 +291,19 @@ function renderProjectSelect() {
     el('option', { value: ADD_PROJECT }, 'Add project…'),
   );
   sel.value = state.project || '';
+  renderProjectAlerts();
+}
+
+// A project alert for each other project with tickets to review or agents that need you; clicking one switches to it.
+function renderProjectAlerts() {
+  const others = availableProjects().filter(p => p.id !== state.project && (p.review > 0 || p.needsYou > 0));
+  $('alerts').replaceChildren(...others.map(p => el('button', {
+    class: 'alert', type: 'button',
+    title: `${p.name}: ${[p.review && `${plural(p.review, 'ticket')} in ready-for-review`, p.needsYou && `${plural(p.needsYou, 'agent')} need${p.needsYou === 1 ? 's' : ''} you`].filter(Boolean).join(', ')}. Switch to it`,
+    onclick: () => switchProject(p.id),
+  }, el('span', { class: 'alert-name' }, p.name),
+    p.review ? el('span', { class: 'alert-review' }, `${p.review} to review`) : null,
+    p.needsYou ? el('span', { class: 'alert-needs-you' }, `⚠ ${p.needsYou}`) : null)));
 }
 
 function renderFeatureSelect() {
@@ -543,8 +571,7 @@ function renderAgent() {
     actions.push(btn(start.resume ? '▶ Continue agent' : '▶ Start agent', refused(start, { class: 'btn primary', title: 'Claim the ticket and run /implement as a background session' }), () => moveTicket(t, 'claimed')));
   }
   // Start/Continue and meld are the next step in their lanes; otherwise attaching is, when the agent needs you.
-  const needsYou = (a?.state === 'waiting' || a?.state === 'idle') && !['ready-for-agent', 'ready-for-review'].includes(t.status);
-  if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${needsYou ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
+  if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${t.needsYou ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
   if (stop) actions.push(btn('■ Stop agent', { title: 'Stop the session; its conversation is kept' }, () => api('/api/agent/stop', { id: t.id })));
   if (resolveConflicts) {
     actions.push(btn('⚔ Resolve conflicts', refused(resolveConflicts, {
@@ -875,23 +902,31 @@ async function removeProject(p) {
 function connectEvents() {
   const es = new EventSource('/api/events');
   // One stream for every project: only the selected project's changes reload the board.
+  // Every change refreshes the project alerts, the selected project's too, so its alert is right once you switch away.
   es.addEventListener('change', e => {
     let project = null;
     try { project = JSON.parse(e.data).project; } catch { /* reload anyway */ }
     if (!project || project === state.project) load();
+    refreshAlerts();
   });
   es.addEventListener('projects', () => loadProjects().then(() => { if (!state.data) load(); }));
   es.onopen = () => $('live').classList.remove('off');
   es.onerror = () => $('live').classList.add('off');
 }
 
-$('project').addEventListener('change', e => {
-  if (e.target.value === ADD_PROJECT) { e.target.value = state.project || ''; openProjectsDialog(); return; }
-  selectProject(e.target.value || null);
+// Picking a project yourself, in the select or from its alert.
+function switchProject(id) {
+  selectProject(id);
   if (state.project) rememberProject(state.project);
+  renderProjectSelect();
   renderFeatureSelect();
   render();
   load();
+}
+
+$('project').addEventListener('change', e => {
+  if (e.target.value === ADD_PROJECT) { e.target.value = state.project || ''; openProjectsDialog(); return; }
+  switchProject(e.target.value || null);
 });
 $('projectForm').addEventListener('submit', addProject);
 $('projectsClose').addEventListener('click', () => $('projectsDialog').close());

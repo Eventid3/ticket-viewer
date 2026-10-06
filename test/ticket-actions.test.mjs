@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ticketActions, refusal, isBusy } from '../lib/ticket-actions.mjs';
+import { ticketActions, refusal, isBusy, needsYou } from '../lib/ticket-actions.mjs';
 
 const git = { agents: true };
 const ticket = (status, extra = {}) => ({ status, blocked: false, openBlockers: [], ...extra });
@@ -95,4 +95,13 @@ test('busy: starting, running and waiting on you', () => {
 
 test('an unknown action is a programming error', () => {
   assert.throws(() => refusal(ticket('claimed'), null, git, 'fly'), /Unknown ticket action/);
+});
+
+test('needs you: an agent waiting on a prompt or ended without committing, outside ready-for-agent and ready-for-review', () => {
+  assert.equal(needsYou(ticket('claimed'), agent('waiting')), true);
+  assert.equal(needsYou(ticket('claimed'), agent('idle')), true);
+  assert.equal(needsYou(ticket('ready-for-review'), agent('idle')), false, 'in review it counts as review');
+  assert.equal(needsYou(ticket('ready-for-agent'), agent('waiting')), false);
+  assert.deepEqual(['starting', 'running', 'done', 'stopped', 'failed'].map(state => needsYou(ticket('claimed'), agent(state))), [false, false, false, false, false]);
+  assert.equal(needsYou(ticket('claimed'), null), false);
 });

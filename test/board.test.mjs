@@ -225,6 +225,41 @@ test('agents work per project, and one finishing in another project moves its ti
   assert.equal(status(shop), 'claimed');
 });
 
+test('the project list counts each available project\'s tickets to review and agents that need you', async t => {
+  let blog;
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { status: 'needs-triage', gitRepo: true }), r => (blog = makeRepo(r, 'blog', { status: 'ready-for-review', gitRepo: true }))] });
+  t.after(() => s.board.close());
+  const issues = path.join(blog, '.scratch', 'feat', 'issues');
+  fs.writeFileSync(path.join(issues, '02-b.md'), '# 02: B\n\nStatus: ready-for-review\n');
+  for (const f of ['03-c.md', '04-d.md']) fs.writeFileSync(path.join(issues, f), `# ${f}\n\nStatus: ready-for-agent\n`);
+  const counts = async () => Object.fromEntries((await s.get('/api/projects')).body.projects.map(p => [p.id, [p.review, p.needsYou]]));
+  assert.deepEqual(await counts(), { blog: [2, 0], shop: [0, 0] });
+
+  // 03 waits on a prompt; 04 ends its turn without committing, then is sent to review: it counts once, as review.
+  assert.equal((await s.post('/api/agent/start', { project: 'blog', id: 'feat/03-c.md' })).status, 200);
+  assert.equal((await s.post('/api/agent/start', { project: 'blog', id: 'feat/04-d.md' })).status, 200);
+  s.cli.set('bg1', { status: 'waiting', waitingFor: 'permission' });
+  s.cli.set('bg2', { status: 'idle' });
+  await s.board.pollAll();
+  assert.deepEqual(await counts(), { blog: [2, 2], shop: [0, 0] });
+  fs.writeFileSync(path.join(issues, '04-d.md'), '# 04\n\nStatus: ready-for-review\n');
+  assert.deepEqual(await counts(), { blog: [3, 1], shop: [0, 0] });
+
+  fs.writeFileSync(path.join(issues, '02-b.md'), '# 02: B\n\nStatus: resolved\n');
+  assert.deepEqual(await counts(), { blog: [2, 1], shop: [0, 0] }, 'counts are the current state, read when the list is asked for');
+});
+
+test('unavailable projects carry no counts', async t => {
+  let dir;
+  const s = await setup({ projects: [r => (dir = makeRepo(r, 'shop', { status: 'ready-for-review' }))] });
+  t.after(() => s.board.close());
+  assert.equal((await s.get('/api/projects')).body.projects[0].review, 1);
+  fs.renameSync(dir, `${dir}-away`);
+  const [shop] = (await s.get('/api/projects')).body.projects;
+  assert.equal(shop.available, false);
+  assert.equal('review' in shop || 'needsYou' in shop, false);
+});
+
 test('a second start while the first agent is still starting is refused', async t => {
   const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
   t.after(() => s.board.close());
