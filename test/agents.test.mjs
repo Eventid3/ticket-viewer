@@ -491,3 +491,66 @@ test('without a usable reference branch, review diffs measure from the stored ba
   const r = await agents.start(ID, ticket);
   assert.equal(agents.reviewBase(ID), r.base);
 });
+
+// --- resolving a merge conflict with the agent --------------------------------------------
+
+// Ticket B conflicts with main in shared.txt once ticket A is merged; B's agent ended its turn.
+async function setupConflictB({ sessionId = true } = {}) {
+  const s = setupConflicts();
+  const a = await s.agents.start(ID, s.ticket);
+  const b = await s.agents.start('feat/02-b.md', s.ticketB);
+  commitFile(a.worktree, 'shared.txt', 'from A\n');
+  commitFile(b.worktree, 'shared.txt', 'from B\n');
+  git(s.repo, 'merge', '-q', a.branch);
+  if (!sessionId) s.cli.set('bg2', { sessionId: undefined });
+  s.cli.set('bg2', { status: 'idle', state: 'done' });
+  await s.agents.poll();
+  return { ...s, b, calls: s.cli.calls.length };
+}
+
+test('resolving conflicts resumes the session with a merge prompt naming the reference branch and files', async () => {
+  const { cli, agents, b, ticketB, calls } = await setupConflictB();
+  const r = await agents.resolveConflicts('feat/02-b.md', ticketB);
+
+  assert.equal(r.state, 'running');
+  const { args, cwd } = cli.calls[calls];
+  assert.equal(cwd, b.worktree);
+  assert.deepEqual(args.slice(0, 2), ['--resume', 'session-bg2']);
+  assert.match(args[2], /git merge main/);
+  assert.match(args[2], /shared\.txt/);
+  assert.match(args[2], /not rebase/i);
+  assert.match(args[2], /run the tests/i);
+  assert.match(args[2], /commit/i);
+  assert.match(args[2], /end your turn/i);
+  assert.match(args[2], /feat-02\.dev\.localhost/, 'with the browser note, like any resume');
+});
+
+test('resolving conflicts without a session to resume starts a new one in the same worktree', async () => {
+  const { cli, agents, b, ticketB, calls } = await setupConflictB({ sessionId: false });
+  assert.equal(agents.get('feat/02-b.md').sessionId, null);
+  const r = await agents.resolveConflicts('feat/02-b.md', ticketB);
+
+  assert.equal(r.state, 'running');
+  assert.equal(r.worktree, b.worktree);
+  assert.equal(r.branch, b.branch);
+  const { args, cwd } = cli.calls[calls];
+  assert.equal(cwd, b.worktree);
+  assert.notEqual(args[0], '--resume');
+  assert.doesNotMatch(args[0], /^\/implement/);
+  assert.match(args[0], /git merge main/);
+  assert.match(args[0], /shared\.txt/);
+  assert.match(args[0], /not rebase/i);
+  assert.ok(args[0].includes(`Read the ticket for context: ${ticketB}`));
+  assert.match(args[0], /feat-02\.dev\.localhost/);
+  assert.deepEqual(args.slice(1), ['-n', 'ticket 02-b', '--permission-mode', 'auto', '--add-dir', path.dirname(ticketB)]);
+});
+
+test('resolving conflicts is refused without a merge conflict or while the agent is busy', async () => {
+  const { cli, agents, ticket, ticketB } = await setupConflictB();
+  cli.set('bg1', { status: 'idle', state: 'done' });
+  await agents.poll();
+  await assert.rejects(agents.resolveConflicts(ID, ticket), /no merge conflict/i);
+  cli.set('bg2', { status: 'busy', state: 'running' });
+  await agents.poll();
+  await assert.rejects(agents.resolveConflicts('feat/02-b.md', ticketB), /already running/i);
+});

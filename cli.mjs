@@ -139,21 +139,43 @@ function addNotes(id, notes) {
  * or the ticket's existing session (full history) with `message` when there is one.
  */
 async function startAgent(id, message) {
+  const t = agentTicket(id, ['ready-for-agent', 'claimed', 'ready-for-review'], 'ready-for-agent');
+  if (t.blocked) throw new HttpError(409, `Blocked by ${t.openBlockers.join(', ')}`);
+  await claimWhile(t, file => {
+    // Records from before background sessions (no bgId) start over; start() moves their worktree into place.
+    if (agents.get(id)?.bgId && agents.get(id).sessionId) return agents.resume(id, file, message || 'Continue implementing the ticket. Re-read it first; it may have new review comments.');
+    return agents.start(id, file);
+  });
+}
+
+/**
+ * Claims the ticket and has its agent merge the reference branch and resolve the merge conflict:
+ * a fixed prompt rather than review notes, so nothing is added to the ticket's ## Comments.
+ */
+async function resolveConflicts(id) {
+  agentTicket(id, ['claimed', 'ready-for-review'], 'claimed or ready-for-review');
+  if (!agents.get(id)?.conflict) throw new HttpError(409, 'No merge conflict to resolve');
+  await claimWhile(findTicket(id), file => agents.resolveConflicts(id, file));
+}
+
+// The ticket, when it is in one of `statuses` and no agent is working on it.
+function agentTicket(id, statuses, expected) {
   if (!agents) throw new HttpError(400, 'Agents need the project to be a git repository');
   const t = findTicket(id);
   if (!t) throw new HttpError(404, 'Unknown ticket');
-  if (!['ready-for-agent', 'claimed', 'ready-for-review'].includes(t.status)) throw new HttpError(409, `Ticket is ${t.status || 'without status'}, not ready-for-agent`);
-  if (t.blocked) throw new HttpError(409, `Blocked by ${t.openBlockers.join(', ')}`);
+  if (!statuses.includes(t.status)) throw new HttpError(409, `Ticket is ${t.status || 'without status'}, not ${expected}`);
   if (agents.busy(id)) throw new HttpError(409, 'An agent is already working on this ticket');
-  const file = findTicketPath(id);
-  writeStatus(id, 'claimed');
+  return t;
+}
+
+// Moves ticket `t` to claimed while `run(ticketFile)` gets its agent going; moves it back if that fails.
+async function claimWhile(t, run) {
+  writeStatus(t.id, 'claimed');
   notifyChange();
   try {
-    // Records from before background sessions (no bgId) start over; start() moves their worktree into place.
-    if (agents.get(id)?.bgId && agents.get(id).sessionId) await agents.resume(id, file, message || 'Continue implementing the ticket. Re-read it first; it may have new review comments.');
-    else await agents.start(id, file);
+    await run(findTicketPath(t.id));
   } catch (e) {
-    writeStatus(id, t.status);
+    writeStatus(t.id, t.status);
     throw new HttpError(500, `Could not start agent: ${e.message}`);
   }
 }
@@ -250,6 +272,7 @@ const server = http.createServer(async (req, res) => {
       const { id, to, notes, pid } = await readBody(req);
       if (url.pathname === '/api/move') return send(res, 200, { ok: true, ...await move(id, to, notes) });
       else if (url.pathname === '/api/agent/start') await startAgent(id);
+      else if (url.pathname === '/api/agent/resolve-conflicts') await resolveConflicts(id);
       else if (url.pathname === '/api/agent/stop') { if (!(await agents?.stop(id))) throw new HttpError(409, 'No agent session'); }
       else if (url.pathname === '/api/agent/kill') {
         if (!agents?.get(id)) throw new HttpError(404, 'No agent for this ticket');
