@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -250,4 +251,16 @@ test('change events carry the project id; project list changes send a projects e
   await s.post('/api/projects', { path: makeRepo(s.root, 'blog') });
   await until(/event: projects/);
   assert.match(text, /event: projects\ndata: \{\}/);
+});
+
+test('requests under a name other than a loopback one are refused, so DNS rebinding reads and changes nothing', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop')] });
+  t.after(() => s.board.close());
+  const { port } = s.board.server.address();
+  const statusFor = host => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: '/api/projects', headers: { Host: host } }, res => { res.resume(); resolve(res.statusCode); }).on('error', reject);
+  });
+  assert.equal(await statusFor('evil.example:80'), 403);
+  assert.equal(await statusFor(`localhost:${port}`), 200);
+  assert.equal(await statusFor(`multi-project-01.dev.localhost:${port}`), 200);
 });

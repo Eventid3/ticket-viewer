@@ -58,8 +58,13 @@ function selectProject(id) {
   if (state.project && id !== state.project) { state.feature = null; state.ticket = null; }
   if (id !== state.project) { state.data = null; state.detail = null; state.structure = null; }
   state.project = id;
-  if (id) { state.lastProject = id; savePrefs(); }
   writeHash();
+}
+
+// The project you picked yourself (not a fallback or a link), opened next time there's none in the hash.
+function rememberProject(id) {
+  state.lastProject = id;
+  savePrefs();
 }
 
 async function load() {
@@ -68,8 +73,15 @@ async function load() {
   const res = await fetch(`/api/tickets?project=${encodeURIComponent(project)}`);
   const body = await res.json().catch(() => ({}));
   if (project !== state.project) return; // another project was picked meanwhile
-  // Unknown or no longer available: the project list says what's left.
-  if (!res.ok) { toast(body.error || `Request failed (${res.status})`); state.project = null; await loadProjects(); return load(); }
+  if (!res.ok) {
+    toast(body.error || `Request failed (${res.status})`);
+    // Unknown or no longer available: the project list says what's left. Other errors stay put rather than retry.
+    if (res.status !== 404 && res.status !== 409) return;
+    state.project = null;
+    await loadProjects();
+    if (state.project) return load();
+    return render();
+  }
   state.data = body;
   const names = state.data.features.map(f => f.name);
   if (state.feature !== ALL && !names.includes(state.feature)) state.feature = names[0];
@@ -256,6 +268,9 @@ function laneColor(status) {
 }
 function label(t) { return t.number ? `#${t.number}` : t.file; }
 
+// Disabled options show no tooltip in most browsers, so an unavailable project's reason goes in its text, cut short.
+function short(text, max = 50) { return text && text.length > max ? `${text.slice(0, max - 1)}…` : text || ''; }
+
 function renderProjectSelect() {
   const sel = $('project');
   const projects = state.projects || [];
@@ -263,7 +278,7 @@ function renderProjectSelect() {
     ...(state.project ? [] : [el('option', { value: '' }, projects.length ? 'No project available' : 'No projects yet')]),
     // The server lists the available projects by name, then the unavailable ones.
     ...projects.map(p => el('option', { value: p.id, disabled: !p.available, title: p.available ? p.path : p.reason },
-      p.available ? p.name : `${p.name} (unavailable)`)),
+      p.available ? p.name : `${p.name} (unavailable: ${short(p.reason)})`)),
     el('option', { value: ADD_PROJECT }, 'Add project…'),
   );
   sel.value = state.project || '';
@@ -843,6 +858,7 @@ async function addProject(e) {
   if (result.error) { dialog.error = result.error; renderProjectsDialog(); $('projectPath').focus(); return; }
   $('projectsDialog').close();
   selectProject(result.project.id);
+  rememberProject(result.project.id);
   // A feature folder opens the board on that feature.
   if (result.feature) { state.feature = result.feature; writeHash(); }
   await loadProjects();
@@ -878,6 +894,7 @@ function connectEvents() {
 $('project').addEventListener('change', e => {
   if (e.target.value === ADD_PROJECT) { e.target.value = state.project || ''; openProjectsDialog(); return; }
   selectProject(e.target.value || null);
+  if (state.project) rememberProject(state.project);
   renderFeatureSelect();
   render();
   load();

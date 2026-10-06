@@ -64,7 +64,8 @@ function exitWith(msg) {
 /** What answers on `port`: a ticket-viewer board (with its project list and options), nothing ('free'), or something else. */
 async function probe(port) {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/projects`, { signal: AbortSignal.timeout(3000) });
+    // Generous: a board busy polling many projects still answers; only something else stays silent this long.
+    const res = await fetch(`http://127.0.0.1:${port}/api/projects`, { signal: AbortSignal.timeout(10_000) });
     if (res.headers.get(BOARD_HEADER) !== '1') return { kind: 'other' };
     return { kind: 'board', info: await res.json() };
   } catch (e) {
@@ -84,8 +85,8 @@ async function handOff(opts, port, info) {
   let project = null, feature = null, added = false;
   if (opts.dir) {
     const res = await fetch(`http://127.0.0.1:${port}/api/projects`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path.resolve(expandPath(opts.dir)) }),
-    });
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: opts.dir }),
+    }).catch(e => exitWith(`Could not reach the board running on port ${port}: ${e.message}`));
     const body = await res.json().catch(() => ({}));
     if (!res.ok) exitWith(body.error || `The running board refused the folder (${res.status})`);
     ({ project, feature, added } = body);
@@ -119,6 +120,7 @@ function listen(server, port) {
 }
 
 const opts = parseArgs(process.argv.slice(2));
+if (opts.dir) opts.dir = path.resolve(expandPath(opts.dir));
 
 // A board already running on this port (or one of the next ones, when something else held this one) takes over.
 let port = null;
@@ -133,7 +135,7 @@ const config = projectsConfig();
 let start = null;
 try {
   if (opts.dir) {
-    const { scratchRoot, feature } = resolveProject(path.resolve(expandPath(opts.dir)));
+    const { scratchRoot, feature } = resolveProject(opts.dir);
     start = { project: config.add(scratchRoot).project, feature };
   }
 } catch (e) { exitWith(e.message); }
