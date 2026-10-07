@@ -26,14 +26,19 @@
     return expandedByHand ? 'expanded' : 'collapsed';
   }
 
-  // Markdown as plain text for one-line excerpts: code, emphasis, links and HTML tags lose their markup.
+  // Markdown as plain text for one-line excerpts: code, emphasis, links, HTML tags and a leading heading, list or
+  // quote marker lose their markup. Code spans are set aside first, so what's inside them stays as written.
   function plainText(md) {
+    const code = [];
     return String(md || '')
-      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/<[^>]+>/g, '')
-      .replace(/`+([^`]*)`+/g, '$1')
-      .replace(/(\*\*|__|~~)(?=\S)(.+?)(?<=\S)\1/g, '$2')
-      .replace(/(^|[^\w*])([*_])(?=\S)(.+?)(?<=\S)\2(?![\w*])/g, '$1$3')
+      .replace(/(`+)(.+?)\1/g, (_, ticks, text) => `\u0000${code.push(text.trim()) - 1}\u0000`)
+      .replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '')
+      .replace(/!?\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)/g, '$1')
+      .replace(/<\/?(?:a|b|i|u|s|em|strong|code|kbd|span|sub|sup|br|mark|del|ins)\b[^>]*>/gi, '')
+      .replace(/(?<!\\)(\*\*|__|~~)(?=\S)(.+?)(?<=\S)(?<!\\)\1/g, '$2')
+      .replace(/(^|[^\w*\\])([*_])(?=\S)(.+?)(?<=[^\s\\])\2(?![\w*])/g, '$1$3')
+      .replace(/\\([\\`*_{}[\]()#+\-.!<>~|])/g, '$1')
+      .replace(/\u0000(\d+)\u0000/g, (_, i) => code[i])
       .replace(/\s+/g, ' ').trim();
   }
 

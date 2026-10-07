@@ -25,7 +25,7 @@
   --danger: oklch(0.72 0.14 25); --danger-bg: oklch(0.25 0.04 25);
   --ok: oklch(0.75 0.13 150); --ok-bg: oklch(0.25 0.04 150);
   --warn: oklch(0.8 0.13 80); --warn-bg: oklch(0.26 0.04 80);
-  /* Filled agent state badges (agentBadge in app.js). --a-text sits on all of them. */
+  /* Agent state colours: the drawer's filled badges (agentBadge in app.js, --a-text sits on all of them) and some card marks. */
   --a-running: oklch(0.78 0.12 205); --a-idle: var(--s-ready-for-human); --a-text: var(--bg);
   --a-waiting: var(--warn); --a-done: var(--ok); --a-failed: var(--danger); --a-stopped: var(--muted);
   color-scheme: dark;
@@ -127,6 +127,7 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .card-num { font-family: var(--mono); }
 .card-feature { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-blocked { color: var(--s-needs-info); white-space: nowrap; }
+.card-unblocked { color: oklch(0.78 0.13 150); white-space: nowrap; }
 .copy-btn {
   margin-left: auto; background: none; border: 0; padding: 0 4px; border-radius: 4px; cursor: pointer;
   color: var(--muted); font: inherit; font-size: 13px; line-height: 18px; opacity: 0;
@@ -208,7 +209,6 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
   background: oklch(0.28 0.008 260); border: 1px solid oklch(0.36 0.008 260); box-shadow: 0 10px 30px rgb(0 0 0 / .4);
   color: oklch(0.95 0.004 260); font-size: 13.5px; overflow-wrap: anywhere;
 }
-
 
 /* Agent state badges: one filled colour per state, so the state reads at a glance on cards and in the drawer. */
 .badge.agent-state { border-color: transparent; color: var(--a-text); font-weight: 500; }

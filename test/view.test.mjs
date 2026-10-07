@@ -78,3 +78,17 @@ test('the excerpt strips inline markdown', () => {
   assert.equal(plainText(''), '');
   assert.equal(plainText(null), '');
 });
+
+test('the excerpt keeps code spans and angle brackets as written', () => {
+  assert.equal(plainText('Use `<div>` and `a*b*c` here'), 'Use <div> and a*b*c here');
+  assert.equal(plainText('A Vec<String> type, a < b and c > d'), 'A Vec<String> type, a < b and c > d');
+  assert.equal(plainText('[a](b(c)) tail'), 'a tail');
+  assert.equal(plainText('\\*not em\\* and **bold**'), '*not em* and bold');
+});
+
+test('the excerpt drops heading, list and quote markers', () => {
+  assert.equal(plainText('## Heading'), 'Heading');
+  assert.equal(plainText('- an item'), 'an item');
+  assert.equal(plainText('12. an item'), 'an item');
+  assert.equal(plainText('> quoted'), 'quoted');
+});

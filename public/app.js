@@ -281,6 +281,7 @@ function fill(node, ...children) {
 function laneColor(status) {
   return KNOWN_COLORS.includes(status) ? `var(--s-${status})` : 'var(--s-other)';
 }
+function laneName(status) { return status || 'no status'; }
 function label(t) { return t.number ? `#${t.number}` : t.file; }
 
 // Disabled options show no tooltip in most browsers, so an unavailable project's reason goes in its text, cut short.
@@ -412,13 +413,13 @@ function dropTarget(target, status) {
   return target;
 }
 
-// `expanded`: an empty lane expanded by hand, which gets a Collapse button.
-function renderLane(status, cards, expanded = false) {
-  const name = status || 'no status';
+// `collapsible`: an empty lane expanded by hand, which gets a Collapse button.
+function renderLane(status, cards, collapsible = false) {
+  const name = laneName(status);
   return dropTarget(el('section', { class: 'lane', style: `--lane-color:${laneColor(status)}` },
     el('div', { class: 'lane-head' },
       el('span', { class: 'dot' }), el('span', { class: 'lane-name' }, name), el('span', { class: 'count' }, cards.length),
-      expanded ? el('button', {
+      collapsible ? el('button', {
         class: 'ghost-btn', type: 'button', 'data-lane-toggle': status, 'aria-label': `Collapse the ${name} lane`, onclick: () => toggleLane(status),
       }, 'Collapse') : null),
     el('div', { class: 'lane-body', 'data-status': status },
@@ -427,7 +428,7 @@ function renderLane(status, cards, expanded = false) {
 
 // An empty lane in Collapse mode: a narrow button with the lane's name, which expands the lane.
 function renderCollapsedLane(status) {
-  const name = status || 'no status';
+  const name = laneName(status);
   return dropTarget(el('button', {
     class: 'lane-collapsed', type: 'button', style: `--lane-color:${laneColor(status)}`, 'data-lane-toggle': status,
     title: 'Expand lane', 'aria-label': `Expand the empty ${name} lane`, onclick: () => toggleLane(status),
@@ -446,6 +447,7 @@ function renderCard(t) {
     el('span', { class: 'progress' }, el('span', { style: `width:${Math.round(100 * t.checks.done / t.checks.total)}%` })),
     el('span', { class: 'progress-label' }, `${t.checks.done}/${t.checks.total}`)) : null;
   const excerpt = plainText(t.summary);
+  const blockers = t.openBlockers.map(n => `#${n}`).join(', ');
 
   const next = nextCommand(t);
   const movable = Object.values(t.actions.moves).some(m => m.ok);
@@ -461,8 +463,8 @@ function renderCard(t) {
       el('span', { class: 'card-num' }, label(t)),
       t.type ? el('span', {}, t.type) : null,
       state.feature === ALL ? el('span', { class: 'card-feature' }, t.feature) : null,
-      t.blocked ? el('span', { class: 'card-blocked', title: `Waiting on ${t.openBlockers.map(n => `#${n}`).join(', ')}` },
-        `blocked by ${t.openBlockers.map(n => `#${n}`).join(', ')}`) : null,
+      t.blocked ? el('span', { class: 'card-blocked', title: `Waiting on ${blockers}` }, `blocked by ${blockers}`)
+        : !DONE.has(t.status) && t.blockedBy.length ? el('span', { class: 'card-unblocked', title: 'All blockers are done' }, '✓ unblocked') : null,
       next ? el('button', {
         class: 'copy-btn', title: `Copy "${next.text}"`, 'aria-label': `Copy ${next.what}`,
         onclick: e => { e.stopPropagation(); copy(next.text, next.what); },
@@ -508,6 +510,7 @@ function mergingMark(a) {
 
 function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
 
+// The agent's state as a filled badge, in the drawer.
 function agentBadge(a) {
   const badge = (state, attrs, text) => el('span', { class: `badge agent-state ${state}`, ...attrs }, text);
   switch (a.state) {
@@ -596,7 +599,7 @@ function renderDrawer() {
 
   fill($('drawerMeta'),
     el('span', { class: 'card-num' }, label(t)), el('span', {}, `· ${t.feature}`),
-    el('span', { class: 'badge status', style: `--lane-color:${laneColor(t.status)}` }, t.status || 'no status'),
+    el('span', { class: 'badge status', style: `--lane-color:${laneColor(t.status)}` }, laneName(t.status)),
     t.type ? el('span', { class: 'badge' }, t.type) : null,
     t.blocked ? el('span', { class: 'badge blocked' }, 'blocked') : null);
   $('drawerTitle').textContent = t.title;
