@@ -5,7 +5,7 @@ const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 
-const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions } = TicketView;
+const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage } = TicketView;
 const $ = id => document.getElementById(id);
 // layout: board or strip (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 const state = { layout: 'board', projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
@@ -143,6 +143,27 @@ async function moveTicket(t, to, notes) {
   return result;
 }
 
+// Ticks or unticks acceptance criterion `index` of ticket `t` in its file. The page flips it straight away and the
+// file watcher's reload confirms it; if the file changed under the page, the server refuses and the reload shows the file.
+// One at a time, so a quick second click can't overtake the first and be refused against a state the page made up.
+async function toggleCriterion(t, index, item) {
+  if (toggleCriterion.busy) return;
+  toggleCriterion.busy = true;
+  const expected = { text: item.text, done: item.done };
+  item.done = !item.done;
+  t.checks = { ...t.checks, done: t.checks.done + (item.done ? 1 : -1) };
+  render();
+  try {
+    const result = await request('/api/criterion', { id: t.id, index, ...expected });
+    if (result.error) throw new Error(result.error);
+  } catch (e) {
+    toast(`Not ${expected.done ? 'unticked' : 'ticked'}: ${e.message}`);
+    load();
+  } finally {
+    toggleCriterion.busy = false;
+  }
+}
+
 const stoppedText = n => `Stopped ${plural(n, 'worktree process')}`;
 const stoppedNote = result => result.stopped ? ` · ${stoppedText(result.stopped)}` : '';
 
@@ -230,7 +251,7 @@ function triageCommand(t, to) { return to ? `/triage move ${t.path} to ${to}` : 
 function nextCommand(t) {
   const a = agentOf(t);
   if (a?.bgId && t.status === 'claimed') return { text: attachCommand(a), what: 'attach command' };
-  if (!t.status || t.status === 'needs-triage' || t.status === 'needs-info') return { text: triageCommand(t), what: '/triage command' };
+  if (isTriage(t)) return { text: triageCommand(t), what: '/triage command' };
   if (t.status === 'ready-for-agent') return { text: implementCommand(t), what: '/implement command' };
   return null;
 }
@@ -488,7 +509,7 @@ function cardAttrs(t, cls) {
     class: cls + (state.ticket === t.id ? ' selected' : '') + (DONE.has(t.status) ? ' dim' : ''),
     tabindex: '0', role: 'button',
     onclick: () => openTicket(t.id),
-    onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(t.id); } },
+    onkeydown: onActivate(() => openTicket(t.id)),
   };
 }
 
@@ -538,17 +559,17 @@ function mergingMark(a) {
 
 function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
 
-// The agent's state as a filled badge, in the drawer.
-function agentBadge(a) {
-  const badge = (state, attrs, text) => el('span', { class: `badge agent-state ${state}`, ...attrs }, text);
+// The agent's state as coloured text next to the Agent section's heading.
+function agentStateLabel(a) {
+  const label = (state, attrs, ...text) => el('span', { class: `mark state-label ${state}`, ...attrs }, ...text);
   switch (a.state) {
-    case 'starting': return badge('running', {}, '● agent starting');
-    case 'running': return badge('running', { title: `Working on ${a.branch}` }, '● agent running');
-    case 'waiting': return badge('waiting', { title: `Attach to answer: ${attachCommand(a)}` }, `⚠ needs you: ${a.waitingFor}`);
-    case 'idle': return badge('idle', { title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 agent is waiting for a reply');
-    case 'done': return badge('done', { title: a.branch }, '✓ agent done');
-    case 'failed': return badge('failed', { title: a.error || '' }, '✕ agent failed to start');
-    default: return badge('stopped', { title: 'The session is not running; attaching reopens it' }, '■ agent stopped');
+    case 'starting': return label('running', {}, el('span', { class: 'run-dot' }), 'starting');
+    case 'running': return label('running', { title: `Working on ${a.branch}` }, el('span', { class: 'run-dot' }), 'running');
+    case 'waiting': return label('waiting', { title: `Attach to answer: ${attachCommand(a)}` }, `⚠ needs you: ${a.waitingFor}`);
+    case 'idle': return label('idle', { title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 waiting for a reply');
+    case 'done': return label('done', { title: a.branch }, '✓ done');
+    case 'failed': return label('failed', { title: a.error || '' }, '✕ failed to start');
+    default: return label('stopped', { title: 'The session is not running; attaching reopens it' }, '■ stopped');
   }
 }
 
@@ -578,7 +599,10 @@ function keepDrawerView(draw) {
   const drawer = $('drawer');
   if (state.ticket && drawer.dataset.ticket === state.ticket) saveView(drawer);
   else drawerView = { open: {}, scroll: {} };
+  // The focused control (by its data-focus key) gets focus back once it's redrawn, so the keyboard keeps its place.
+  const focused = drawer.contains(document.activeElement) ? document.activeElement.dataset.focus : null;
   draw();
+  if (focused) drawer.querySelector(`[data-focus="${focused}"]`)?.focus();
   if (drawer.hidden) { delete drawer.dataset.ticket; return; }
   restoreView(drawer);
   drawer.dataset.ticket = state.ticket;
@@ -659,16 +683,19 @@ function renderTicket(t) {
     t.blockedBy.length || t.blocks.length ? el('div', { class: 'links-row' },
       t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
       t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null,
-    t.sections.map(renderSection));
+    t.sections.map(s => renderSection(t, s)));
 }
 
-function renderSection(s) {
-  const markdownBlock = (md, cls = '') => {
-    if (!md) return null;
-    const div = el('div', { class: `ticket-text markdown ${cls}` });
-    div.innerHTML = renderMarkdown(md);
-    return div;
-  };
+// A div of class `cls` with `md` rendered as markdown; null without markdown.
+function markdownDiv(cls, md) {
+  if (!md) return null;
+  const div = el('div', { class: `markdown ${cls}` });
+  div.innerHTML = renderMarkdown(md);
+  return div;
+}
+
+function renderSection(t, s) {
+  const markdownBlock = (md, cls = '') => markdownDiv(`ticket-text ${cls}`, md);
   const inlineMarkdown = (tag, attrs, md) => { const n = el(tag, attrs); n.innerHTML = inline(md); return n; };
   const head = s.label ? el('div', { class: 'ticket-label' }, s.label) : null;
   if (s.key === 'criteria') {
@@ -678,8 +705,13 @@ function renderSection(s) {
         head,
         el('span', { class: 'progress' }, el('span', { style: `width:${Math.round(100 * done / s.items.length)}%` })),
         el('span', { class: 'progress-label' }, `${done}/${s.items.length}`)) : head,
-      s.items.map(i => el('div', { class: 'criterion' + (i.done ? ' done' : '') },
-        el('span', { class: 'checkbox', role: 'checkbox', 'aria-checked': String(i.done), 'aria-label': i.text }, i.done ? '✓' : ''),
+      s.items.map((i, n) => el('div', {
+        class: 'criterion' + (i.done ? ' done' : ''), role: 'checkbox', tabindex: '0', 'aria-checked': String(i.done),
+        'data-focus': `criterion-${n}`, title: i.done ? 'Untick' : 'Tick',
+        onclick: () => toggleCriterion(t, n, i),
+        onkeydown: onActivate(() => toggleCriterion(t, n, i)),
+      },
+        el('span', { class: 'checkbox', 'aria-hidden': 'true' }, i.done ? '✓' : ''),
         inlineMarkdown('span', { class: 'criterion-text' }, i.text))),
       markdownBlock(s.body));
   }
@@ -721,12 +753,12 @@ function setCommandsOpen(open) {
   $('commandsBtn').setAttribute('aria-expanded', String(open));
 }
 
-// The header's primary actions: only those for the ticket's current state (headerActions in view.js), each wired to
-// the server's ticket action, which disables it with its reason when refused.
-function renderActions(t, a) {
+// The ticket's action buttons by name, each a function giving [text, attrs, onclick], wired to the server's ticket
+// action, which disables it with its reason when refused. `a`: the ticket's agent, for the buttons that need one.
+function actionButtons(t, a) {
   const { start, stop, resolveConflicts, mergeByHand, moves } = t.actions;
   const d = state.detail?.id === t.id ? state.detail : null;
-  const make = {
+  return {
     approve: () => ['✓ Approve', refused(moves.resolved, { title: `Mark resolved, stop the session and its worktree processes, and copy the command that merges ${a.branch} into ${a.ref || 'the branch you are on'}` }), async () => {
       const conflict = a.conflict;
       const result = await moveTicket(t, 'resolved');
@@ -758,6 +790,11 @@ function renderActions(t, a) {
       if (result) toast(result.clean ? `${label(t)}: merged ${a.ref} cleanly and committed` : `${label(t)}: ${plural(result.unresolved, 'file')} to resolve · opening meld`);
     }],
   };
+}
+
+// The header's primary actions: only those for the ticket's current state (headerActions in view.js).
+function renderActions(t, a) {
+  const make = actionButtons(t, a);
   const { buttons, note } = headerActions(t, a);
   fill($('drawerActions'),
     buttons.map(({ name, style }) => {
@@ -767,70 +804,99 @@ function renderActions(t, a) {
     note ? el('span', { class: 'muted' }, note) : null);
 }
 
-// The Claude Code part of the drawer: start an agent, follow it, and review what it did.
+// The Agent section: what the agent did (its final message as a summary and report), its changes, and sending it back
+// with notes; or, without an agent, how to get one going (noAgentPrompt in view.js).
 function renderAgent() {
   const box = $('drawerAgent');
   const t = state.ticket && findTicket(state.ticket);
   const a = t && agentOf(t);
   const d = state.detail?.id === t?.id ? state.detail : null;
+  const empty = t && !a ? noAgentPrompt(t) : null;
   // Empty it too: the previous ticket's buttons (Stop agent) are bound to that ticket.
-  if (!t || !a) { box.hidden = true; box.replaceChildren(); return; }
+  if (!t || (!a && !empty)) { box.hidden = true; box.replaceChildren(); return; }
   box.hidden = false;
-  const { moves } = t.actions;
+  if (!a) return fill(box, el('div', { class: 'agent-title' }, el('h3', {}, agentHeading(null))), renderNoAgent(t, empty));
 
   // Loaded afresh each time the ticket comes (back) into review.
   if (!wantsStructure(t) && state.structure?.id === t.id) state.structure = null;
-  let review = null;
-  if (t.status === 'ready-for-review' && a) {
-    // Kept in state, so the board's live reloads don't wipe what you've written.
-    const notes = el('textarea', {
-      class: 'notes', rows: 3, placeholder: 'Review notes: sent to the agent\'s session and added to the ticket\'s ## Comments',
-      oninput: e => { state.notes[t.id] = e.target.value; },
-    });
-    notes.value = state.notes[t.id] || '';
-    const structure = wantsStructure(t);
-    if (structure && state.structure?.id !== t.id) loadStructure(t.id, true);
-    // The merge-base with the reference branch, once the detail has loaded.
-    const since = (d?.changes?.base || a.base).slice(0, 8);
-    review = el('div', { class: 'review' },
-      el('div', { class: 'agent-actions' },
-        structure ? btn(state.structure?.opening ? '⌗ Opening structure diff…' : '⌗ Open structure diff', {
-          class: 'btn primary', disabled: !!state.structure?.opening,
-          title: `codemap view: the structural changes since ${since}, to mark OK or Flag`,
-        }, () => openStructureDiff(t)) : null,
-        btn('↩ Send back to agent', refused(moves.claimed, { title: 'Resume the agent\'s session with your notes' }), () => {
-          if (!notes.value.trim()) return toast('Write what should change first');
-          moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
-        })),
-      structure ? renderStructure(t, notes) : null,
-      notes);
-  }
-
-  const pending = a?.state === 'waiting' && d?.items.at(-1)?.kind === 'tool' ? d.items.at(-1).text : null;
-  const last = pending
-    ? el('div', { class: 'last-message', 'data-keep': 'pending' }, el('strong', {}, 'Waiting to run: '), el('code', {}, pending), el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`))
-    : d?.lastMessage && ['idle', 'done', 'stopped'].includes(a?.state)
-      ? el('div', { class: 'last-message markdown', 'data-keep': 'last-message', title: 'The agent\'s last message' }) : null;
-  if (last && !pending) last.innerHTML = renderMarkdown(d.lastMessage);
+  const pending = a.state === 'waiting' && d?.items.at(-1)?.kind === 'tool' ? d.items.at(-1).text : null;
+  const final = d?.lastMessage && ['idle', 'done', 'stopped'].includes(a.state) ? d.lastMessage : null;
   const changes = d?.changes;
   fill(box,
+    el('div', { class: 'agent-title' },
+      el('h3', {}, agentHeading(a)),
+      agentStateLabel(a)),
+    pending ? el('div', { class: 'pending', 'data-keep': 'pending' },
+      el('div', { class: 'pending-label' }, 'Waiting to run'),
+      el('code', {}, pending),
+      el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`)) : null,
     el('div', { class: 'agent-head' },
-      el('strong', {}, 'Claude Code'),
-      agentBadge(a),
       badgeButton(el('code', {}, a.branch), a.branch, 'branch'),
-      a?.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
-      a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
-    last,
+      a.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
+      a.error ? el('span', { class: 'badge blocked' }, a.error) : null),
+    final ? renderReport(final, a.reviewNotes) : null,
     renderMerge(t, a),
-    review,
-    a?.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
+    a.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
-      el('summary', {}, `${changes.commits.length} commit${changes.commits.length === 1 ? '' : 's'}${changes.dirty ? ' · uncommitted changes' : ''}`),
+      el('summary', {}, `${plural(changes.commits.length, 'commit')}${changes.dirty ? ' · uncommitted changes' : ''}`),
       changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
       changes.stat ? el('pre', {}, changes.stat) : null) : null,
-    d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: !!a?.busy },
-      el('summary', {}, 'Agent activity'),
+    t.status === 'ready-for-review' ? renderSendBack(t, a, d) : null,
+    d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: !!a.busy },
+      el('summary', {}, `Agent activity · ${plural(d.items.length, 'step')}`),
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
+}
+
+// A ticket without an agent: why, and the one thing to do about it (Start agent only when the server offers it).
+function renderNoAgent(t, { text, action, blocked }) {
+  const shown = action !== 'start' || !!t.actions.start;
+  const [buttonText, attrs, onclick] = shown ? actionButtons(t, null)[action]() : [];
+  return el('div', { class: 'no-agent' },
+    el('p', {}, text),
+    blocked ? el('p', { class: 'blocked-note' }, blocked) : null,
+    shown ? el('div', { class: 'agent-actions' }, btn(buttonText, { ...attrs, class: 'btn primary' }, onclick)) : null);
+}
+
+// The agent's final message: its prose as the summary, its `- **Label:** text` bullets as report rows (splitReport in
+// view.js), then the review notes it was last sent back with, and anything else it wrote. Without such bullets, the whole message.
+function renderReport(message, reviewNotes) {
+  const { summary, items, rest } = splitReport(message);
+  const rows = [...items, ...(reviewNotes ? [{ label: 'Review', text: reviewNotes }] : [])];
+  return el('div', { class: 'report' },
+    markdownDiv('agent-summary', summary),
+    rows.length ? el('div', { class: 'report-items' },
+      rows.flatMap(r => [el('div', { class: 'report-label' }, r.label), markdownDiv('report-value', r.text)])) : null,
+    markdownDiv('agent-summary rest', rest));
+}
+
+// Sending a ticket in review back to its agent, with notes; codemap's structure diff fills them with its flagged notes.
+function renderSendBack(t, a, d) {
+  // Kept in state, so the board's live reloads don't wipe what you've written.
+  const notes = el('textarea', {
+    id: 'sendBackNotes', class: 'notes', rows: 3, placeholder: 'Notes go to the agent\'s session and are added to the ticket\'s ## Comments',
+    oninput: e => { state.notes[t.id] = e.target.value; },
+  });
+  notes.value = state.notes[t.id] || '';
+  const structure = wantsStructure(t);
+  if (structure && state.structure?.id !== t.id) loadStructure(t.id, true);
+  // The merge-base with the reference branch, once the detail has loaded.
+  const since = (d?.changes?.base || a.base).slice(0, 8);
+  return el('div', { class: 'review' },
+    structure ? el('div', { class: 'agent-actions' },
+      btn(state.structure?.opening ? '⌗ Opening structure diff…' : '⌗ Open structure diff', {
+        disabled: !!state.structure?.opening,
+        title: `codemap view: the structural changes since ${since}, to mark OK or Flag`,
+      }, () => openStructureDiff(t))) : null,
+    structure ? renderStructure(t, notes) : null,
+    el('div', { class: 'send-back' },
+      el('label', { class: 'send-back-label', for: 'sendBackNotes' }, 'Send back with notes'),
+      notes,
+      el('div', { class: 'send-back-row' },
+        btn('↩ Send back to agent', refused(t.actions.moves.claimed, { title: 'Resume the agent\'s session with your notes' }), () => {
+          if (!notes.value.trim()) return toast('Add review notes first');
+          moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
+        }),
+        el('span', { class: 'muted' }, 'The agent resumes on the same branch.'))));
 }
 
 // Where the ticket's work will be merged, and the files a test merge into it conflicts in;
@@ -908,6 +974,9 @@ function renderStructure(t, notes) {
         disabled: !s.notes.length, title: s.notes.length ? 'Add the flagged items to the review notes below' : 'Flag items in the structure diff to get notes here',
       }, copyNotes)) : null);
 }
+
+// A keydown handler that runs `fn` on Enter or Space, as a click would.
+function onActivate(fn) { return e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } }; }
 
 function btn(text, attrs, onclick) { return el('button', { class: 'btn', ...attrs, onclick }, text); }
 // A ticket action's button attributes: disabled when refused, with the reason as its tooltip.

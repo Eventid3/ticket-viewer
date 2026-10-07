@@ -185,3 +185,105 @@ test('row card marks: the running dot or ✓ on active tickets, plus ⚠ when th
   assert.deepEqual(rowMarks(t('resolved'), { state: 'done' }), { running: false, done: false, needsYou: false }, 'resolved tickets show no agent mark');
   assert.deepEqual(rowMarks(t('wontfix', true), { state: 'waiting' }), { running: false, done: false, needsYou: false }, 'nor ⚠');
 });
+
+const { splitReport } = globalThis.TicketView;
+
+test('a final message splits into the prose before its bullets and one report item per **Label:** bullet', () => {
+  const md = [
+    'Added the `--port` flag and **documented** it.',
+    '',
+    'It falls back to the next free port.',
+    '',
+    '- **Change:** `cli.mjs` parses `--port`.',
+    '- **Docs:** README updated.',
+    '* **Browser check**: opened the board.',
+  ].join('\n');
+  assert.deepEqual(splitReport(md), {
+    summary: 'Added the `--port` flag and **documented** it.\n\nIt falls back to the next free port.',
+    items: [
+      { label: 'Change', text: '`cli.mjs` parses `--port`.' },
+      { label: 'Docs', text: 'README updated.' },
+      { label: 'Browser check', text: 'opened the board.' },
+    ],
+    rest: '',
+  });
+});
+
+test('report labels are whatever the agent wrote, and indented lines belong to their item', () => {
+  const { items } = splitReport('Done.\n\n- **Tests:** 12 pass,\n  1 skipped\n- **Risky bit:** none\n    - really none');
+  assert.deepEqual(items, [
+    { label: 'Tests', text: '12 pass,\n1 skipped' },
+    { label: 'Risky bit', text: 'none\n  - really none' },
+  ]);
+});
+
+test('a message without **Label:** bullets has no report items and is the summary whole', () => {
+  const md = 'Which port should it use?\n\n- 4777\n- 5000';
+  assert.deepEqual(splitReport(md), { summary: md, items: [], rest: '' });
+  assert.deepEqual(splitReport(''), { summary: '', items: [], rest: '' });
+  assert.deepEqual(splitReport(null), { summary: '', items: [], rest: '' });
+});
+
+test('text after the report and plain bullets among it are kept as the rest', () => {
+  const md = 'Summary.\n\n- **Change:** x\n- a plain bullet\n\nAsk me if anything is unclear.';
+  assert.deepEqual(splitReport(md), {
+    summary: 'Summary.',
+    items: [{ label: 'Change', text: 'x' }],
+    rest: '- a plain bullet\n\nAsk me if anything is unclear.',
+  });
+});
+
+test('bullets inside a code fence are not report items', () => {
+  const md = 'See:\n\n```\n- **Change:** not a bullet\n```';
+  assert.deepEqual(splitReport(md).items, []);
+  assert.equal(splitReport(md).summary, md);
+});
+
+const { agentHeading, noAgentPrompt, isTriage } = globalThis.TicketView;
+
+test('the Agent section heading follows the agent state; needs you and waiting for a reply have their own', () => {
+  assert.equal(agentHeading(null), 'Agent');
+  assert.equal(agentHeading({ state: 'done' }), 'What the agent did');
+  assert.equal(agentHeading({ state: 'running' }), 'Agent is working');
+  assert.equal(agentHeading({ state: 'starting' }), 'Agent is working');
+  assert.equal(agentHeading({ state: 'stopped' }), 'Agent stopped');
+  assert.equal(agentHeading({ state: 'failed' }), 'Agent stopped');
+  assert.equal(agentHeading({ state: 'waiting' }), 'Agent needs you');
+  assert.equal(agentHeading({ state: 'idle' }), 'Agent is waiting for a reply');
+});
+
+test('no agent: ready-for-agent offers Start agent, triage statuses offer Copy /triage, others show nothing', () => {
+  const t = (status, openBlockers = []) => ({ status, openBlockers });
+  assert.deepEqual(noAgentPrompt(t('ready-for-agent')), { text: 'No agent has worked on this ticket yet.', action: 'start', blocked: null });
+  for (const s of ['needs-triage', 'needs-info', null]) {
+    const box = noAgentPrompt(t(s));
+    assert.equal(box.action, 'triage', String(s));
+    assert.match(box.text, /needs triage/);
+  }
+  for (const s of ['ready-for-human', 'resolved', 'wontfix', 'claimed', 'ready-for-review']) assert.equal(noAgentPrompt(t(s)), null, s);
+});
+
+test('no agent on a blocked ticket warns that an agent may conflict with the blockers', () => {
+  assert.equal(noAgentPrompt({ status: 'ready-for-agent', openBlockers: ['08'] }).blocked,
+    "Blocked by #08. You can still start an agent, but it may conflict with #08's changes.");
+  assert.equal(noAgentPrompt({ status: 'ready-for-agent', openBlockers: ['08', '09'] }).blocked,
+    "Blocked by #08, #09. You can still start an agent, but it may conflict with their changes.");
+  assert.equal(noAgentPrompt({ status: 'needs-triage', openBlockers: ['08'] }).blocked, 'Blocked by #08.', 'no agent to start from triage');
+});
+
+test('needs-triage, needs-info and no status are the triage statuses', () => {
+  for (const s of ['needs-triage', 'needs-info', null, undefined, '']) assert.ok(isTriage({ status: s }), String(s));
+  for (const s of ['ready-for-agent', 'claimed', 'resolved']) assert.ok(!isTriage({ status: s }), s);
+});
+
+test('a longer fence only closes on a fence at least as long, and bullets after it count again', () => {
+  const md = 'Summary.\n\n````\n```\n- **Change:** inside\n````\n\n- **Change:** outside';
+  assert.deepEqual(splitReport(md).items, [{ label: 'Change', text: 'outside' }]);
+  assert.deepEqual(splitReport('~~~~\n~~~\n- **A:** x\n~~~~\n- **B:** y').items, [{ label: 'B', text: 'y' }]);
+});
+
+test('an unindented line right below a report bullet continues it', () => {
+  assert.deepEqual(splitReport('S.\n\n- **Change:** foo\nbar\n\nAfter.'), {
+    summary: 'S.', items: [{ label: 'Change', text: 'foo\nbar' }], rest: 'After.',
+  });
+});

@@ -227,6 +227,25 @@ test('agents work per project, and one finishing in another project moves its ti
   assert.equal(status(shop), 'claimed');
 });
 
+test('sending a ticket in review back with notes adds them to ## Comments, resumes the session with them and keeps them on the agent record', async t => {
+  let shop;
+  const s = await setup({ projects: [r => (shop = makeRepo(r, 'shop', { gitRepo: true }))] });
+  t.after(() => s.board.close());
+  const id = 'feat/01-a.md';
+  assert.equal((await s.post('/api/agent/start', { project: 'shop', id })).status, 200);
+  commit(s.cli.calls[0].cwd, 'work');
+  s.cli.set('bg1', { status: 'idle' });
+  await s.board.pollAll();
+  assert.equal(status(shop), 'ready-for-review');
+
+  assert.equal((await s.post('/api/move', { project: 'shop', id, to: 'claimed', notes: 'Rename the flag' })).status, 200);
+  assert.equal(status(shop), 'claimed');
+  assert.match(fs.readFileSync(path.join(shop, '.scratch', 'feat', 'issues', id.split('/')[1]), 'utf8'), /## Comments[\s\S]*Rename the flag/);
+  assert.deepEqual(s.cli.calls[1].args.slice(0, 2), ['--resume', 'session-bg1']);
+  assert.match(s.cli.calls[1].args[2], /^Review feedback on your work[\s\S]*Rename the flag/);
+  assert.equal((await s.get(`/api/agent?project=shop&id=${encodeURIComponent(id)}`)).body.record.reviewNotes, 'Rename the flag');
+});
+
 test('the project list counts each available project\'s tickets to review and agents that need you', async t => {
   let blog;
   const s = await setup({ projects: [r => makeRepo(r, 'shop', { status: 'needs-triage', gitRepo: true }), r => (blog = makeRepo(r, 'blog', { status: 'ready-for-review', gitRepo: true }))] });
@@ -356,4 +375,29 @@ test('requests under a name other than a loopback one are refused, so DNS rebind
   assert.equal(await statusFor('evil.example:80'), 403);
   assert.equal(await statusFor(`localhost:${port}`), 200);
   assert.equal(await statusFor(`multi-project-01.dev.localhost:${port}`), 200);
+});
+
+test('POST /api/criterion ticks a criterion in the file, and refuses a stale one without writing', async t => {
+  let shop;
+  const s = await setup({ projects: [r => (shop = makeRepo(r, 'shop'))] });
+  t.after(() => s.board.close());
+  const file = path.join(shop, '.scratch', 'feat', 'issues', '01-a.md');
+  fs.writeFileSync(file, '# 01: A\n\nStatus: ready-for-agent\n\n- [ ] One\n- [ ] Two\n');
+
+  const res = await s.post('/api/criterion', { project: 'shop', id: 'feat/01-a.md', index: 1, text: 'Two', done: false });
+  assert.equal(res.status, 200);
+  assert.equal(fs.readFileSync(file, 'utf8'), '# 01: A\n\nStatus: ready-for-agent\n\n- [ ] One\n- [x] Two\n');
+  const ticket = (await s.get('/api/tickets?project=shop')).body.features[0].tickets[0];
+  assert.deepEqual(ticket.checks, { done: 1, total: 2 });
+
+  // Someone inserts a criterion above: the page's row 1 is now "One".
+  fs.writeFileSync(file, '# 01: A\n\nStatus: ready-for-agent\n\n- [ ] Zero\n- [ ] One\n- [x] Two\n');
+  const before = fs.readFileSync(file, 'utf8');
+  const stale = await s.post('/api/criterion', { project: 'shop', id: 'feat/01-a.md', index: 1, text: 'Two', done: true });
+  assert.equal(stale.status, 409);
+  assert.match(stale.body.error, /changed/);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+
+  assert.equal((await s.post('/api/criterion', { project: 'shop', id: 'feat/nope.md', index: 0, text: 'One', done: false })).status, 404);
+  assert.equal((await s.post('/api/criterion', { project: 'shop', id: 'feat/01-a.md', index: 'x', text: 'One', done: false })).status, 400);
 });

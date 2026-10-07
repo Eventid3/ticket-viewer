@@ -25,9 +25,8 @@
   --danger: oklch(0.72 0.14 25); --danger-bg: oklch(0.25 0.04 25);
   --ok: oklch(0.75 0.13 150); --ok-bg: oklch(0.25 0.04 150);
   --warn: oklch(0.8 0.13 80); --warn-bg: oklch(0.26 0.04 80);
-  /* Agent state colours: the drawer's filled badges (agentBadge in app.js, --a-text sits on all of them) and some card marks. */
-  --a-running: oklch(0.78 0.12 205); --a-idle: var(--s-ready-for-human); --a-text: var(--bg);
-  --a-waiting: var(--warn); --a-done: var(--ok); --a-failed: var(--danger); --a-stopped: var(--muted);
+  /* Agent state colours, for card marks, the drawer's state label and the project alerts (--a-text sits on --a-waiting). */
+  --a-running: oklch(0.78 0.12 205); --a-idle: var(--s-ready-for-human); --a-waiting: var(--warn); --a-text: var(--bg);
   color-scheme: dark;
 }
 
@@ -286,7 +285,9 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .criteria-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .criteria-head .progress { flex: 1; max-width: 80px; width: auto; background: oklch(0.28 0.006 260); }
 .criteria-head .progress-label { font-size: 12px; color: oklch(0.62 0.008 260); }
-.criterion { display: flex; align-items: flex-start; gap: 11px; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; font-size: 14px; line-height: 1.5; }
+.criterion { display: flex; align-items: flex-start; gap: 11px; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; font-size: 14px; line-height: 1.5; cursor: pointer; user-select: none; }
+.criterion:hover { background: oklch(0.215 0.006 260); }
+.criterion:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .criterion .checkbox {
   flex: none; display: flex; align-items: center; justify-content: center; width: 17px; height: 17px; margin-top: 2px;
   border-radius: 4px; border: 1.5px solid oklch(0.45 0.008 260); color: oklch(0.17 0.02 150); font-size: 12px; font-weight: 700;
@@ -304,21 +305,30 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
   color: oklch(0.95 0.004 260); font-size: 13.5px; overflow-wrap: anywhere;
 }
 
-/* Agent state badges: one filled colour per state, so the state reads at a glance on cards and in the drawer. */
-.badge.agent-state { border-color: transparent; color: var(--a-text); font-weight: 500; }
-.badge.agent-state.waiting { background: var(--a-waiting); }
-.badge.agent-state.idle { background: var(--a-idle); }
-.badge.agent-state.done { background: var(--a-done); }
-.badge.agent-state.failed { background: var(--a-failed); }
-.badge.agent-state.stopped { background: var(--a-stopped); }
-/* Running also covers starting. */
-.badge.agent-state.running { background: var(--a-running); animation: pulse 1.6s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: .5; } }
-@media (prefers-reduced-motion: reduce) { .badge.agent-state.running { animation: none; } }
-
-.agent { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 4px 0 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
+/* The Agent section: what the agent did first, then its changes, sending it back and its activity. */
+.agent { display: flex; flex-direction: column; gap: 18px; font-size: 12.5px; overflow-wrap: anywhere; }
+.agent-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.agent-title h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.state-label { font-size: 13px; font-weight: 500; }
+.state-label.waiting { display: inline-flex; white-space: normal; }
+.pending { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 9px; border: 1px solid oklch(0.4 0.08 80); background: oklch(0.2 0.02 80 / .35); font-size: 13px; }
+.pending-label { color: var(--warn); font-weight: 600; }
+.pending code { font-size: 12.5px; white-space: pre-wrap; }
+.no-agent { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 22px; border: 1px dashed oklch(0.3 0.006 260); border-radius: 9px; font-size: 14px; line-height: 1.55; color: var(--text-2); }
+.no-agent p { margin: 0; }
+.report { display: flex; flex-direction: column; gap: 14px; }
+.agent-summary { font-size: 15px; line-height: 1.65; color: var(--text); text-wrap: pretty; }
+.agent-summary.rest { font-size: 14px; line-height: 1.6; color: oklch(0.86 0.005 260); }
+.report-items { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px 16px; padding: 14px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 14px; line-height: 1.6; }
+.report-label { color: var(--muted); font-weight: 500; }
+.report-value { color: oklch(0.86 0.005 260); }
+.agent-summary > :first-child, .report-value > :first-child { margin-top: 0; }
+.agent-summary > :last-child, .report-value > :last-child { margin-bottom: 0; }
+.send-back { display: flex; flex-direction: column; gap: 8px; }
+.send-back-label { font-size: 13.5px; font-weight: 600; }
+.send-back-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .agent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-/* A fixed line height keeps the state badge (whose ✓/⚠ glyphs come from a taller fallback font) level with the branch badge. */
+/* A fixed line height keeps the branch and hostname badges level with the error badge. */
 .agent-head .badge { line-height: 16px; white-space: normal; overflow-wrap: anywhere; }
 .agent-head button.badge { cursor: pointer; font: inherit; line-height: 16px; margin: 0; }
 .agent-head code { font-size: 11.5px; }
@@ -334,13 +344,11 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .btn.green { background: oklch(0.75 0.13 150); border-color: oklch(0.75 0.13 150); color: oklch(0.17 0.03 150); }
 .btn.stop { color: oklch(0.8 0.13 25); border-color: oklch(0.36 0.05 25); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.review { display: flex; flex-direction: column; gap: 6px; }
-.notes { font: inherit; width: 100%; box-sizing: border-box; resize: vertical; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
-.last-message { margin: 0; padding: 6px 10px; border-left: 3px solid var(--border); max-height: 200px; overflow-y: auto; }
-.last-message > :first-child { margin-top: 0; }
-.last-message > :last-child { margin-bottom: 0; }
-.last-message.markdown h1 { display: block; font-size: 14px; margin: 10px 0 4px; }
-.last-message.markdown h2 { font-size: 13.5px; margin: 10px 0 4px; }
+.review { display: flex; flex-direction: column; gap: 14px; }
+.notes { font: inherit; font-size: 14px; line-height: 1.5; width: 100%; box-sizing: border-box; resize: vertical; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: oklch(0.17 0.005 260); color: var(--text); }
+.notes:focus-visible { outline: none; border-color: var(--accent); }
+.report .markdown h1 { display: block; font-size: 15px; margin: 12px 0 4px; }
+.report .markdown h2 { font-size: 14px; margin: 12px 0 4px; }
 .agent summary { cursor: pointer; color: var(--muted); }
 .agent pre { margin: 6px 0 0; padding: 6px 8px; background: var(--bg); border-radius: 6px; overflow-x: auto; font-size: 11.5px; }
 .commits { margin: 6px 0 0; padding: 6px 8px; list-style: none; background: var(--bg); border-radius: 6px; font: 11.5px/1.45 var(--mono); }
