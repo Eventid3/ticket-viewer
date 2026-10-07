@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createAgents, agentHostname, conflictCheck, mergeTree } from '../lib/agents.mjs';
+import { createAgents, agentHostname, conflictCheck, mergeTree, parseCommits, parseNumstat } from '../lib/agents.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 const commit = (cwd, msg) => {
@@ -504,10 +504,45 @@ test('review diffs measure from the merge-base with the reference branch', async
   const base = agents.reviewBase('feat/02-b.md');
   assert.equal(base, git(repo, 'rev-parse', 'main'));
   const changes = agents.changes('feat/02-b.md');
-  assert.deepEqual(changes.commits.map(c => c.replace(/^\w+ /, '')), ["Merge branch 'main' into ticket/feat/02-b", 'Work of B'], 'not A\'s work');
+  assert.deepEqual(changes.commits.map(c => c.subject), ["Merge branch 'main' into ticket/feat/02-b", 'Work of B'], 'not A\'s work');
   assert.equal(changes.base, base);
-  assert.match(changes.stat, /b\.txt/);
-  assert.doesNotMatch(changes.stat, /a\.txt/);
+  assert.deepEqual(changes.files, [{ path: 'b.txt', added: 1, deleted: 0 }], 'not a.txt');
+  assert.deepEqual(changes.totals, { files: 1, added: 1, deleted: 0 });
+  assert.equal(changes.dirty, false);
+});
+
+test('changes: commits as short sha and subject, files with their counts, binary files without, and uncommitted work', async () => {
+  const { agents, ticket } = setup();
+  const r = await agents.start(ID, ticket);
+  commit(r.worktree, 'Build it');
+  fs.writeFileSync(path.join(r.worktree, 'logo.bin'), Buffer.from([0, 1, 2, 0, 255]));
+  git(r.worktree, 'add', 'logo.bin');
+  git(r.worktree, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'Add the logo');
+  fs.appendFileSync(path.join(r.worktree, 'work.txt'), 'more\n');
+
+  const changes = agents.changes(ID);
+  assert.deepEqual(changes.commits.map(c => c.subject), ['Add the logo', 'Build it']);
+  assert.equal(changes.commits[0].sha, git(r.worktree, 'rev-parse', '--short', 'HEAD'));
+  assert.deepEqual(changes.files, [{ path: 'logo.bin', added: null, deleted: null }, { path: 'work.txt', added: 2, deleted: 0 }], 'counts include the uncommitted line');
+  assert.deepEqual(changes.totals, { files: 2, added: 2, deleted: 0 });
+  assert.equal(changes.dirty, true);
+});
+
+test('parseCommits splits short sha and subject, keeping tabs and spaces in the subject', () => {
+  assert.deepEqual(parseCommits('abc1234\tFix it: a\tb\n9f8e7d6\tFirst\n'), [{ sha: 'abc1234', subject: 'Fix it: a\tb' }, { sha: '9f8e7d6', subject: 'First' }]);
+  assert.deepEqual(parseCommits(''), []);
+  assert.deepEqual(parseCommits(null), []);
+});
+
+test('parseNumstat reads counts per file, binary files as no counts, and renames as git prints them', () => {
+  const out = '3\t1\tlib/a.mjs\n-\t-\tpublic/logo.png\n0\t0\tsrc/{old => new}/b.js\n12\t0\tname with spaces.md\n';
+  assert.deepEqual(parseNumstat(out), [
+    { path: 'lib/a.mjs', added: 3, deleted: 1 },
+    { path: 'public/logo.png', added: null, deleted: null },
+    { path: 'src/{old => new}/b.js', added: 0, deleted: 0 },
+    { path: 'name with spaces.md', added: 12, deleted: 0 },
+  ]);
+  assert.deepEqual(parseNumstat(''), []);
 });
 
 test('without a usable reference branch, review diffs measure from the stored base', async () => {

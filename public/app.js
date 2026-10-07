@@ -5,7 +5,7 @@ const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 
-const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage } = TicketView;
+const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, changeBars } = TicketView;
 const $ = id => document.getElementById(id);
 // layout: board or strip (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 const state = { layout: 'board', projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
@@ -837,11 +837,8 @@ function renderAgent() {
     final ? renderReport(final, a.reviewNotes) : null,
     renderMerge(t, a),
     a.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
-    changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
-      el('summary', {}, `${plural(changes.commits.length, 'commit')}${changes.dirty ? ' · uncommitted changes' : ''}`),
-      changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
-      changes.stat ? el('pre', {}, changes.stat) : null) : null,
-    t.status === 'ready-for-review' ? renderSendBack(t, a, d) : null,
+    changes?.commits.length || changes?.files.length ? renderChanges(t, a, changes) : null,
+    t.status === 'ready-for-review' ? renderSendBack(t) : null,
     d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: !!a.busy },
       el('summary', {}, `Agent activity · ${plural(d.items.length, 'step')}`),
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
@@ -869,25 +866,15 @@ function renderReport(message, reviewNotes) {
     markdownDiv('agent-summary rest', rest));
 }
 
-// Sending a ticket in review back to its agent, with notes; codemap's structure diff fills them with its flagged notes.
-function renderSendBack(t, a, d) {
+// Sending a ticket in review back to its agent, with notes; the structure diff in the Changes block adds its flagged notes.
+function renderSendBack(t) {
   // Kept in state, so the board's live reloads don't wipe what you've written.
   const notes = el('textarea', {
     id: 'sendBackNotes', class: 'notes', rows: 3, placeholder: 'Notes go to the agent\'s session and are added to the ticket\'s ## Comments',
     oninput: e => { state.notes[t.id] = e.target.value; },
   });
   notes.value = state.notes[t.id] || '';
-  const structure = wantsStructure(t);
-  if (structure && state.structure?.id !== t.id) loadStructure(t.id, true);
-  // The merge-base with the reference branch, once the detail has loaded.
-  const since = (d?.changes?.base || a.base).slice(0, 8);
   return el('div', { class: 'review' },
-    structure ? el('div', { class: 'agent-actions' },
-      btn(state.structure?.opening ? '⌗ Opening structure diff…' : '⌗ Open structure diff', {
-        disabled: !!state.structure?.opening,
-        title: `codemap view: the structural changes since ${since}, to mark OK or Flag`,
-      }, () => openStructureDiff(t))) : null,
-    structure ? renderStructure(t, notes) : null,
     el('div', { class: 'send-back' },
       el('label', { class: 'send-back-label', for: 'sendBackNotes' }, 'Send back with notes'),
       notes,
@@ -941,28 +928,72 @@ function renderProcesses(t, procs, hostname) {
       btn('Kill', { title: `Stop process group ${p.pgid} (SIGTERM, then SIGKILL after 5 s)` }, () => killProcesses(t, p.pid))))));
 }
 
-// The review panel's codemap section: counts per review-list group, flagged entries, and copying their notes.
-function renderStructure(t, notes) {
+// The Agent section's Changes block: commits, changed files with their line counts, uncommitted work, and in review
+// codemap's structure diff. Meld shows the diffs themselves.
+function renderChanges(t, a, changes) {
+  const { commits, files, totals } = changes;
+  const structure = wantsStructure(t);
+  if (structure && state.structure?.id !== t.id) loadStructure(t.id, true);
+  const make = actionButtons(t, a);
+  // Buttons in the summary: clicking them shouldn't fold the block.
+  const headBtn = ([text, attrs, onclick]) => btn(text, attrs, e => { e.preventDefault(); onclick(); });
+  const bars = changeBars(files);
+  return el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
+    el('summary', { class: 'changes-head' },
+      el('span', { class: 'changes-title' }, 'Changes'),
+      el('span', { class: 'muted' }, `${plural(commits.length, 'commit')} · ${plural(totals.files, 'file')}`),
+      el('span', { class: 'diff-count' }, el('span', { class: 'add' }, `+${totals.added}`), ' ', el('span', { class: 'del' }, `−${totals.deleted}`)),
+      el('span', { class: 'spacer' }),
+      headBtn(make.diff()),
+      structure ? headBtn([state.structure?.opening ? 'Opening structure diff…' : 'Structure diff', {
+        disabled: !!state.structure?.opening,
+        title: `codemap view: the structural changes since ${changes.base.slice(0, 8)}, to mark OK or Flag`,
+      }, () => openStructureDiff(t)]) : null),
+    commits.length ? el('div', { class: 'change-commits' }, commits.map(c => el('div', { class: 'change-commit' },
+      el('code', { class: 'sha' }, c.sha), el('span', {}, c.subject)))) : null,
+    files.length ? el('div', { class: 'change-files' }, files.flatMap((f, i) => [
+      el('span', { class: 'path', title: f.path }, f.path),
+      ...(f.added == null
+        ? [el('span', { class: 'muted binary', title: 'Binary file: no line counts' }, 'binary')]
+        : [el('span', { class: 'add' }, `+${f.added}`), el('span', { class: 'del' }, `−${f.deleted}`)]),
+      el('span', { class: 'bar' },
+        el('span', { class: 'add', style: `width: ${bars[i].added}px` }),
+        el('span', { class: 'del', style: `width: ${bars[i].deleted}px` })),
+    ])) : null,
+    changes.dirty ? el('div', { class: 'change-note muted' }, 'Uncommitted changes in the worktree (counted in the files above)') : null,
+    structure ? renderStructure(t) : null);
+}
+
+// A one-line warning in the Changes block, e.g. when codemap failed, with a Retry button.
+function warningRow(text, retry) {
+  return el('div', { class: 'change-warning' },
+    el('span', { class: 'warning-text', title: text }, `⚠ ${text}`),
+    btn('Retry', {}, retry));
+}
+
+// The Changes block's codemap row: counts per review-list group, flagged entries, and copying their notes to Send back.
+function renderStructure(t) {
   const st = state.structure?.id === t.id ? state.structure : {};
   const s = st.summary;
   const copyNotes = () => {
-    const current = notes.value.trim();
+    const current = (state.notes[t.id] || '').trim();
     const missing = s.notes.filter(n => !current.includes(n));
     if (!missing.length) return toast('The flagged notes are already in your notes');
     const text = missing.map(n => `- ${n}`).join('\n');
-    notes.value = current ? `${current}\n\n${text}` : text;
-    state.notes[t.id] = notes.value;
-    notes.focus();
+    state.notes[t.id] = current ? `${current}\n\n${text}` : text;
+    const notes = $('sendBackNotes');
+    if (notes) { notes.value = state.notes[t.id]; notes.focus(); }
     toast(`Copied ${plural(missing.length, 'flagged note')} into the notes`);
   };
   return el('div', { class: 'structure' },
-    el('div', { class: 'agent-head' },
-      el('strong', {}, 'Structure diff'),
+    el('div', { class: 'structure-head' },
+      el('span', { class: 'structure-title' }, 'Structure diff'),
       st.loading ? el('span', { class: 'muted' }, s ? 'refreshing…' : 'computing… (the first run extracts both snapshots)') : null,
       s && !st.loading && s.groups.length ? el('span', { class: 'muted' }, s.unmarked ? `${plural(s.unmarked, 'item')} not marked yet` : 'all marked') : null,
+      el('span', { class: 'spacer' }),
       el('button', { class: 'icon-btn', title: 'Refresh the summary, e.g. after marking items in codemap', disabled: !!st.loading, onclick: () => loadStructure(t.id) }, '↻')),
-    st.viewError ? el('div', { class: 'error-text' }, `Could not open structure diff: ${st.viewError}`) : null,
-    st.error ? el('div', { class: 'error-text' }, `Could not get the codemap summary: ${st.error}`) : null,
+    st.viewError ? warningRow(`Could not open structure diff: ${st.viewError}`, () => openStructureDiff(t)) : null,
+    st.error ? warningRow(`Could not get the codemap summary: ${st.error}`, () => loadStructure(t.id)) : null,
     s ? el('div', { class: 'structure-groups' },
       s.groups.length
         ? s.groups.map(g => el('span', { class: 'badge' + (g.kind === 'other-change' ? '' : ' structural') }, `${g.label}: ${g.count}`))
@@ -971,7 +1002,7 @@ function renderStructure(t, notes) {
     s?.flagged.length ? el('ul', { class: 'flagged' }, s.flagged.map(f => el('li', { title: f.title }, f.note))) : null,
     s ? el('div', { class: 'agent-actions' },
       btn(`⇣ Copy ${plural(s.notes.length, 'flagged note')} to Send back`, {
-        disabled: !s.notes.length, title: s.notes.length ? 'Add the flagged items to the review notes below' : 'Flag items in the structure diff to get notes here',
+        disabled: !s.notes.length, title: s.notes.length ? 'Add the flagged items to the Send back notes below' : 'Flag items in the structure diff to get notes here',
       }, copyNotes)) : null);
 }
 
