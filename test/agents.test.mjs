@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createAgents, agentHostname, conflictCheck, mergeTree } from '../lib/agents.mjs';
+import { createAgents, agentHostname, conflictCheck, mergeTree, parseCommits, parseNumstat } from '../lib/agents.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 const commit = (cwd, msg) => {
@@ -174,6 +174,64 @@ test('reads activity and the last message from the session transcript', async ()
   assert.deepEqual(items.map(i => `${i.kind}: ${i.text}`), ['text: Looking around', 'tool: Bash npm test', 'text: Should I also update the docs?']);
   assert.equal(lastMessage, 'Should I also update the docs?');
   assert.equal(cli.calls.length, 1);
+});
+
+test('reads each activity item\'s time and the run\'s start and last item from the transcript', async () => {
+  const { cli, agents, claudeHome, ticket } = setup();
+  const before = Date.now();
+  await agents.start(ID, ticket);
+  await agents.poll();
+  const dir = path.join(claudeHome, 'projects', 'some-project');
+  fs.mkdirSync(dir, { recursive: true });
+  const lines = [
+    { type: 'user', timestamp: '2026-10-07T12:00:00.000Z', message: { content: 'go' } },
+    { type: 'assistant', timestamp: '2026-10-07T12:00:05.000Z', message: { content: [{ type: 'text', text: 'Looking around' }, { type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }] } },
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'No timestamp' }] } },
+    { type: 'assistant', timestamp: '2026-10-07T12:09:30.000Z', message: { content: [{ type: 'text', text: 'Done' }] } },
+  ];
+  fs.writeFileSync(path.join(dir, 'session-bg1.jsonl'), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+
+  const { items, startedAt, lastAt } = agents.activity(ID);
+  assert.deepEqual(items.map(i => [i.text, i.at]), [
+    ['Looking around', '2026-10-07T12:00:05.000Z'],
+    ['Bash npm test', '2026-10-07T12:00:05.000Z'],
+    ['No timestamp', null],
+    ['Done', '2026-10-07T12:09:30.000Z'],
+  ]);
+  assert.equal(lastAt, '2026-10-07T12:09:30.000Z');
+  assert.ok(Date.parse(startedAt) >= before - 1000 && Date.parse(startedAt) <= Date.now(), 'the run started when the session was launched');
+
+  // A resume starts a new run; a session that stops records when the board saw it stop.
+  await agents.resume(ID, ticket, 'Carry on');
+  assert.ok(Date.parse(agents.activity(ID).startedAt) >= Date.parse(startedAt));
+  assert.equal(agents.get(ID).stoppedAt, null);
+  cli.sessions.length = 0;
+  await agents.poll();
+  assert.equal(agents.get(ID).state, 'stopped');
+  assert.ok(Date.parse(agents.get(ID).stoppedAt) <= Date.now());
+});
+
+test('a new start times its run from the start, not from the previous run, even when launching fails', async () => {
+  const { cli, agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  await agents.poll();
+  cli.sessions.length = 0;
+  await agents.poll();
+  const first = agents.activity(ID).startedAt;
+  await new Promise(r => setTimeout(r, 5));
+  cli.background = async () => { throw new Error('boom'); };
+  await assert.rejects(agents.start(ID, ticket));
+  assert.ok(Date.parse(agents.activity(ID).startedAt) > Date.parse(first));
+  assert.equal(agents.get(ID).stoppedAt, null);
+});
+
+test('an agent without a transcript has no items and no last item time', async () => {
+  const { agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  const { items, lastAt, startedAt } = agents.activity(ID);
+  assert.deepEqual(items, []);
+  assert.equal(lastAt, null);
+  assert.ok(startedAt);
 });
 
 test('state survives a restart of the board', async () => {
@@ -504,10 +562,45 @@ test('review diffs measure from the merge-base with the reference branch', async
   const base = agents.reviewBase('feat/02-b.md');
   assert.equal(base, git(repo, 'rev-parse', 'main'));
   const changes = agents.changes('feat/02-b.md');
-  assert.deepEqual(changes.commits.map(c => c.replace(/^\w+ /, '')), ["Merge branch 'main' into ticket/feat/02-b", 'Work of B'], 'not A\'s work');
+  assert.deepEqual(changes.commits.map(c => c.subject), ["Merge branch 'main' into ticket/feat/02-b", 'Work of B'], 'not A\'s work');
   assert.equal(changes.base, base);
-  assert.match(changes.stat, /b\.txt/);
-  assert.doesNotMatch(changes.stat, /a\.txt/);
+  assert.deepEqual(changes.files, [{ path: 'b.txt', added: 1, deleted: 0 }], 'not a.txt');
+  assert.deepEqual(changes.totals, { files: 1, added: 1, deleted: 0 });
+  assert.equal(changes.dirty, false);
+});
+
+test('changes: commits as short sha and subject, files with their counts, binary files without, and uncommitted work', async () => {
+  const { agents, ticket } = setup();
+  const r = await agents.start(ID, ticket);
+  commit(r.worktree, 'Build it');
+  fs.writeFileSync(path.join(r.worktree, 'logo.bin'), Buffer.from([0, 1, 2, 0, 255]));
+  git(r.worktree, 'add', 'logo.bin');
+  git(r.worktree, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'Add the logo');
+  fs.appendFileSync(path.join(r.worktree, 'work.txt'), 'more\n');
+
+  const changes = agents.changes(ID);
+  assert.deepEqual(changes.commits.map(c => c.subject), ['Add the logo', 'Build it']);
+  assert.equal(changes.commits[0].sha, git(r.worktree, 'rev-parse', '--short', 'HEAD'));
+  assert.deepEqual(changes.files, [{ path: 'logo.bin', added: null, deleted: null }, { path: 'work.txt', added: 2, deleted: 0 }], 'counts include the uncommitted line');
+  assert.deepEqual(changes.totals, { files: 2, added: 2, deleted: 0 });
+  assert.equal(changes.dirty, true);
+});
+
+test('parseCommits splits short sha and subject, keeping tabs and spaces in the subject', () => {
+  assert.deepEqual(parseCommits('abc1234\tFix it: a\tb\n9f8e7d6\tFirst\n'), [{ sha: 'abc1234', subject: 'Fix it: a\tb' }, { sha: '9f8e7d6', subject: 'First' }]);
+  assert.deepEqual(parseCommits(''), []);
+  assert.deepEqual(parseCommits(null), []);
+});
+
+test('parseNumstat reads counts per file, binary files as no counts, and renames as git prints them', () => {
+  const out = '3\t1\tlib/a.mjs\n-\t-\tpublic/logo.png\n0\t0\tsrc/{old => new}/b.js\n12\t0\tname with spaces.md\n';
+  assert.deepEqual(parseNumstat(out), [
+    { path: 'lib/a.mjs', added: 3, deleted: 1 },
+    { path: 'public/logo.png', added: null, deleted: null },
+    { path: 'src/{old => new}/b.js', added: 0, deleted: 0 },
+    { path: 'name with spaces.md', added: 12, deleted: 0 },
+  ]);
+  assert.deepEqual(parseNumstat(''), []);
 });
 
 test('without a usable reference branch, review diffs measure from the stored base', async () => {

@@ -25,6 +25,8 @@
   --danger: oklch(0.72 0.14 25); --danger-bg: oklch(0.25 0.04 25);
   --ok: oklch(0.75 0.13 150); --ok-bg: oklch(0.25 0.04 150);
   --warn: oklch(0.8 0.13 80); --warn-bg: oklch(0.26 0.04 80);
+  /* Added and deleted lines in the Changes block. */
+  --diff-add: oklch(0.76 0.13 150); --diff-del: var(--danger);
   /* Agent state colours, for card marks, the drawer's state label and the project alerts (--a-text sits on --a-waiting). */
   --a-running: oklch(0.78 0.12 205); --a-idle: var(--s-ready-for-human); --a-waiting: var(--warn); --a-text: var(--bg);
   color-scheme: dark;
@@ -337,6 +339,7 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .agent-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
 .agent-title h3 { margin: 0; font-size: 16px; font-weight: 600; }
 .state-label { font-size: 13px; font-weight: 500; }
+.agent-meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .state-label.waiting { display: inline-flex; white-space: normal; }
 .pending { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 9px; border: 1px solid oklch(0.4 0.08 80); background: oklch(0.2 0.02 80 / .35); font-size: 13px; }
 .pending-label { color: var(--warn); font-weight: 600; }
@@ -355,10 +358,6 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .send-back-label { font-size: 13.5px; font-weight: 600; }
 .send-back-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .agent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-/* A fixed line height keeps the branch and hostname badges level with the error badge. */
-.agent-head .badge { line-height: 16px; white-space: normal; overflow-wrap: anywhere; }
-.agent-head button.badge { cursor: pointer; font: inherit; line-height: 16px; margin: 0; }
-.agent-head code { font-size: 11.5px; }
 .agent-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .muted { color: var(--muted); }
 /* Every agent-panel button has the same size; only the next step is .primary. */
@@ -378,15 +377,46 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .report .markdown h2 { font-size: 14px; margin: 12px 0 4px; }
 .agent summary { cursor: pointer; color: var(--muted); }
 .agent pre { margin: 6px 0 0; padding: 6px 8px; background: var(--bg); border-radius: 6px; overflow-x: auto; font-size: 11.5px; }
-.commits { margin: 6px 0 0; padding: 6px 8px; list-style: none; background: var(--bg); border-radius: 6px; font: 11.5px/1.45 var(--mono); }
-.commits li { overflow-wrap: anywhere; padding-left: 2ch; text-indent: -2ch; }
-.activity ol { margin: 6px 0 0; padding-left: 20px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
-.activity li { overflow-wrap: anywhere; white-space: pre-wrap; }
-.activity li.tool { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
-.activity li.error { color: var(--danger); }
-.activity li.result { color: var(--ok); }
-.structure { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
-.structure .icon-btn { margin-left: auto; font-size: 14px; padding: 0 6px; }
+/* The activity feed: time, marker and text per row; the latest row is brighter. */
+.feed { margin: 0; padding: 6px 0; list-style: none; max-height: 340px; overflow-y: auto; border: 1px solid var(--border); border-radius: 9px; background: oklch(0.17 0.005 260); }
+.activity .feed { margin-top: 8px; }
+.feed-row { display: grid; grid-template-columns: 52px 16px minmax(0, 1fr); align-items: baseline; padding: 5px 14px; }
+.feed-row time { font: 12px var(--mono); color: oklch(0.55 0.008 260); font-variant-numeric: tabular-nums; }
+.feed-marker { align-self: start; display: flex; align-items: center; height: 1.5em; font: 12.5px/1.5 var(--mono); color: oklch(0.55 0.008 260); }
+.feed-text { font: 12.5px/1.5 var(--mono); color: oklch(0.76 0.006 260); white-space: pre-wrap; overflow-wrap: anywhere; }
+.feed-row.latest .feed-text { color: var(--text); }
+.changes { border: 1px solid oklch(0.28 0.006 260); border-radius: 9px; background: oklch(0.175 0.005 260); overflow: hidden; }
+.changes > summary.changes-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 14px; color: var(--text); list-style: none; }
+.changes > summary::-webkit-details-marker { display: none; }
+/* The marker is hidden, so a chevron shows the block folds (it starts folded outside ready-for-review). */
+.changes > summary::before { content: "▸"; color: var(--muted); font-size: 11px; margin-right: -4px; }
+.changes[open] > summary::before { content: "▾"; }
+.changes-title { font-size: 13.5px; font-weight: 600; }
+.changes-head .muted { font-size: 13px; }
+.changes-head .btn { font-size: 12.5px; }
+.diff-count { font: 12.5px var(--mono); }
+.changes .add { color: var(--diff-add); }
+.changes .del { color: var(--diff-del); }
+.changes > :not(summary) { border-top: 1px solid oklch(0.28 0.006 260); }
+.change-commit { display: flex; gap: 10px; align-items: baseline; padding: 9px 14px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.change-commit + .change-commit { border-top: 1px solid oklch(0.24 0.006 260); }
+.change-commit .sha { flex: none; font: 12.5px var(--mono); color: oklch(0.78 0.11 255); }
+/* One grid for every file, so the counts and bars line up. */
+.change-files { display: grid; grid-template-columns: minmax(0, 1fr) auto auto 50px; gap: 6px 12px; align-items: center; padding: 9px 14px; font: 12.5px var(--mono); }
+.change-files .path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.change-files .add, .change-files .del { text-align: right; }
+.change-files .binary { grid-column: span 2; text-align: right; }
+.change-files .bar { display: flex; width: 50px; height: 6px; border-radius: 3px; overflow: hidden; background: oklch(0.25 0.006 260); }
+.change-files .bar .add { background: var(--diff-add); }
+.change-files .bar .del { background: var(--diff-del); }
+.change-note { padding: 9px 14px; font-size: 13px; }
+.change-warning { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border-radius: 7px; font-size: 12.5px; color: oklch(0.8 0.11 70); background: oklch(0.2 0.02 70 / .35); }
+.change-warning .warning-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.change-warning .btn { flex: none; height: 24px; font-size: 12px; }
+.structure { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px 12px; font-size: 13px; }
+.structure-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.structure-title { font-weight: 600; }
+.structure .icon-btn { font-size: 14px; padding: 0 6px; }
 .structure-groups { display: flex; flex-wrap: wrap; gap: 4px; }
 .badge.structural { border-color: var(--s-ready-for-review); color: var(--s-ready-for-review); }
 /* codemap's reference warning can be long: one line cut with "…", the whole text on hover or keyboard focus. */
@@ -396,21 +426,41 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 }
 .structure .badge.needs-you:hover, .structure .badge.needs-you:focus { white-space: normal; overflow-wrap: anywhere; }
 .flagged { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; }
-.error-text { color: var(--danger); overflow-wrap: anywhere; white-space: pre-wrap; }
-/* Worktree processes: a badge on the card in any lane, and a killable list in the agent panel. */
-.process-list { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
-.process-list .agent-head .btn { margin-left: auto; }
-.process-list ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.process-list li { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.process-list .command { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
-.process-list a.badge { color: var(--text); text-decoration: none; }
-.process-list a.badge:hover { border-color: var(--muted); }
-.merge-conflict { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--danger); border-radius: 6px; background: var(--danger-bg); }
-.merge-conflict strong { color: var(--danger); }
-.merge-conflict ul { margin: 0; padding-left: 18px; }
-.merge-conflict code { overflow-wrap: anywhere; }
-.merge-conflict.merging { border-color: var(--warn); background: var(--warn-bg); }
-.merge-conflict.merging strong { color: var(--warn); }
+/* Bordered blocks in the Agent section (worktree processes, merge conflicts): a header or warning row, then rows. */
+.block { border: 1px solid oklch(0.28 0.006 260); border-radius: 9px; background: oklch(0.175 0.005 260); overflow: hidden; }
+.block-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 14px; }
+.block-title { font-size: 13.5px; font-weight: 600; }
+.block-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 12.5px; }
+/* One amber line: a warning about the block below (or on its own, red, for the agent's error). */
+.warn-row { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 12.5px; color: oklch(0.8 0.11 70); background: oklch(0.2 0.02 70 / .35); }
+.warn-row.danger { border-radius: 9px; color: var(--danger); background: var(--danger-bg); }
+.warn-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.warn-row code { font-family: var(--mono); font-size: 12px; }
+.file-row { padding: 6px 14px; border-top: 1px solid oklch(0.25 0.006 260); font: 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Worktree processes: a badge on the card in any lane, and a killable table in the Agent section. */
+.process-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 14px; border-top: 1px solid oklch(0.25 0.006 260); }
+.process-row .command { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.process-row .pid { color: var(--muted); font: 12px var(--mono); white-space: nowrap; }
+.process-row .port { color: var(--muted); font: 12px var(--mono); }
+.port-link { flex: none; color: oklch(0.78 0.11 255); text-decoration: none; font-size: 12.5px; white-space: nowrap; }
+.port-link:hover { text-decoration: underline; }
+/* Workspace: branch, preview host, worktree and reference branch, each copied on click. */
+.workspace { display: flex; flex-direction: column; gap: 8px; }
+.workspace-heading { font-size: 13.5px; font-weight: 600; color: var(--text-2); }
+.workspace-heading .hint { font-weight: 400; color: oklch(0.58 0.008 260); }
+.workspace-table { display: grid; grid-template-columns: 96px minmax(0, 1fr); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.workspace-label, .workspace-value { padding: 8px 12px; border-top: 1px solid var(--border); }
+.workspace-label:first-child, .workspace-label:first-child + .workspace-value { border-top: 0; }
+.workspace-label { color: var(--muted); font-size: 12.5px; }
+.workspace-value {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+  font: 12.5px var(--mono); color: var(--text-2); background: none; border-left: 0; border-right: 0; border-bottom: 0; cursor: copy;
+}
+.workspace-value:hover { background: oklch(0.22 0.006 260); }
+.workspace-value:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.workspace-value.empty { cursor: default; color: var(--muted); font-family: inherit; font-size: 13px; }
+.workspace-value.empty:hover { background: none; }
 
 /* Project picker: unavailable projects are listed but can't be picked. */
 .topbar select option:disabled { color: var(--muted); }
