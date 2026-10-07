@@ -5,19 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ticket Board</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='2' width='4' height='12' rx='1' fill='%234f6bed'/><rect x='6' y='2' width='4' height='8' rx='1' fill='%234f6bed' opacity='.7'/><rect x='11' y='2' width='4' height='5' rx='1' fill='%234f6bed' opacity='.45'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
     <h1>Tickets</h1>
-    <select id="project" aria-label="Project"></select>
+    <select id="project" class="field" aria-label="Project"></select>
     <span id="alerts" class="alerts" aria-live="polite"></span>
-    <select id="feature" aria-label="Feature"></select>
-    <input id="search" type="search" placeholder="Filter by number, title, text…" aria-label="Filter">
-    <label class="toggle"><input id="hideEmpty" type="checkbox"> Hide empty lanes</label>
-    <label class="toggle"><input id="unblockedOnly" type="checkbox"> Unblocked only</label>
-    <span id="stats" class="stats"></span>
-    <span id="live" class="live" title="Live reload">●</span>
+    <select id="feature" class="field" aria-label="Feature"></select>
+    <input id="search" class="field search" type="search" placeholder="Filter by number, title, text" aria-label="Filter">
+    <button id="unblockedOnly" class="toggle-btn" type="button" aria-pressed="false" title="Hide tickets waiting on an unresolved ticket">Unblocked only</button>
+    <div class="seg-field"><span id="emptyLanesLabel">Empty lanes</span><div id="emptyLanes" class="seg" role="group" aria-labelledby="emptyLanesLabel"></div></div>
+    <span class="spacer"></span>
+    <span id="live" class="live" title="Live updates lost; reconnecting" hidden>● offline</span>
+    <div class="counts">
+      <span title="Agents running or starting"><span class="run-dot"></span><span id="countRunning">0</span> running</span>
+      <span title="Tickets in ready-for-review"><span class="dot review-dot"></span><span id="countReview">0</span> to review</span>
+    </div>
   </header>
 
   <main id="board" class="board"></main>
@@ -54,6 +61,7 @@
     <p id="projectListEmpty" class="project-hint">No projects yet.</p>
   </dialog>
 
+  <script src="view.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

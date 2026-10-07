@@ -40,7 +40,9 @@ One board shows every **project** you've added, one at a time. A project is one 
 - Cards show number, title, the "What to build" line, acceptance-criteria progress (`- [ ]` / `- [x]`), type and comment count.
 - A ticket is **blocked** while any ticket in its `Blocked by:` line isn't `resolved`, `done`, `closed` or `wontfix`.
 - Click a card for the full rendered ticket, with links to its blockers and the tickets it blocks.
-- The board reloads live when files change on disk.
+- The board reloads live when files change on disk. If the live connection drops, the top bar shows "● offline" until it's back.
+- **Top bar**, after the pickers: a search box that matches a ticket's number (`#07` or `07`), title or body text; **Unblocked only**, which hides blocked tickets; **Empty lanes** (Show / Collapse / Hide); and live counts of agents running and tickets to review in the selected feature. Unblocked only and Empty lanes are remembered in `localStorage`.
+- The design is dark only, in Geist and Geist Mono from Google Fonts.
 
 ## Background agents
 

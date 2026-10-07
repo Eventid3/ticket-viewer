@@ -6,8 +6,10 @@ const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
+const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts } = TicketView;
 const $ = id => document.getElementById(id);
-const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', hideEmpty: false, unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {} };
+// emptyLanes: show, collapse or hide the lanes with no tickets (collapse shows them until collapsed lanes exist).
+const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {} };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
@@ -25,14 +27,11 @@ function writeHash() {
 }
 function loadPrefs() {
   try {
-    const p = JSON.parse(localStorage.getItem('ticket-viewer') || '{}');
-    state.hideEmpty = !!p.hideEmpty;
-    state.unblockedOnly = !!p.unblockedOnly;
-    state.lastProject = typeof p.lastProject === 'string' ? p.lastProject : null;
+    Object.assign(state, readPrefs(JSON.parse(localStorage.getItem('ticket-viewer') || '{}')));
   } catch { /* storage unavailable */ }
 }
 function savePrefs() {
-  try { localStorage.setItem('ticket-viewer', JSON.stringify({ hideEmpty: state.hideEmpty, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
+  try { localStorage.setItem('ticket-viewer', JSON.stringify({ emptyLanes: state.emptyLanes, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
 }
 
 // ---- data -------------------------------------------------------------------------------
@@ -209,9 +208,7 @@ function findTicket(id) {
 
 function matches(t) {
   if (state.unblockedOnly && t.blocked) return false;
-  if (!state.query) return true;
-  const q = state.query.toLowerCase();
-  return [t.number, t.title, t.summary, t.type, t.status, t.body].some(v => v && v.toLowerCase().includes(q));
+  return matchesQuery(t, state.query);
 }
 
 function laneList(tickets) {
@@ -340,7 +337,7 @@ function renderEmpty() {
     el('p', {}, none ? 'No projects yet. Add a repo root, its .scratch folder or one feature folder.'
       : state.project ? 'Loading…' : state.projects ? 'None of your projects is available right now; hover one in the project list to see why.' : 'Loading…'),
     state.projects && !state.project ? btn('+ Add project', { class: 'btn primary' }, openProjectsDialog) : null));
-  $('stats').textContent = '';
+  renderCounts([]);
   $('drawer').hidden = true;
 }
 
@@ -355,17 +352,41 @@ function render() {
 
   board.replaceChildren(...lanes.map(status => {
     const cards = visible.filter(t => (t.status || NO_STATUS) === status);
-    if (state.hideEmpty && cards.length === 0) return null;
+    if (state.emptyLanes === 'hide' && cards.length === 0) return null;
     return renderLane(status, cards);
   }).filter(Boolean));
 
   board.scrollLeft = boardScroll;
   for (const b of board.querySelectorAll('.lane-body')) b.scrollTop = scroll.get(b.dataset.status) || 0;
 
-  const done = all.filter(t => DONE.has(t.status)).length;
-  const blocked = all.filter(t => t.blocked).length;
-  $('stats').textContent = `${visible.length}/${all.length} shown · ${done} done · ${blocked} blocked`;
+  renderCounts(all);
   keepDrawerView(renderDrawer);
+}
+
+// The top bar's live counts for the tickets on the board (the selected feature, before the filters).
+function renderCounts(tickets) {
+  const { running, review } = liveCounts(tickets, state.data?.agents);
+  $('countRunning').textContent = running;
+  $('countReview').textContent = review;
+}
+
+// The top bar's toggles, drawn from state.
+function renderToolbar() {
+  $('unblockedOnly').setAttribute('aria-pressed', state.unblockedOnly);
+  segmented($('emptyLanes'), EMPTY_LANES.map(v => [v, v[0].toUpperCase() + v.slice(1)]), state.emptyLanes, v => {
+    state.emptyLanes = v;
+    savePrefs();
+    renderToolbar();
+    render();
+  });
+}
+
+// A segmented control in `box`: one button per [value, label, title?] option, the `value` one pressed.
+function segmented(box, options, value, onpick) {
+  fill(box, options.map(([v, text, title]) => el('button', {
+    type: 'button', class: 'seg-btn', 'aria-pressed': String(v === value), title,
+    onclick: () => { if (v !== value) onpick(v); },
+  }, text)));
 }
 
 function renderLane(status, cards) {
@@ -762,7 +783,7 @@ function toast(msg) {
   t.textContent = msg;
   t.hidden = false;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { t.hidden = true; }, 2200);
+  toast.timer = setTimeout(() => { t.hidden = true; }, 2400);
 }
 
 // ---- minimal markdown renderer (input is escaped first) ---------------------------------
@@ -925,8 +946,8 @@ function connectEvents() {
     refreshAlerts();
   });
   es.addEventListener('projects', () => loadProjects().then(() => { if (!state.data) load(); }));
-  es.onopen = () => $('live').classList.remove('off');
-  es.onerror = () => $('live').classList.add('off');
+  es.onopen = () => { $('live').hidden = true; };
+  es.onerror = () => { $('live').hidden = false; };
 }
 
 // Picking a project yourself, in the select or from its alert.
@@ -948,9 +969,8 @@ $('project').addEventListener('change', e => {
 $('projectForm').addEventListener('submit', addProject);
 $('projectsClose').addEventListener('click', () => $('projectsDialog').close());
 $('feature').addEventListener('change', e => { state.feature = e.target.value; state.ticket = null; writeHash(); render(); });
-$('search').addEventListener('input', e => { state.query = e.target.value.trim(); render(); });
-$('hideEmpty').addEventListener('change', e => { state.hideEmpty = e.target.checked; savePrefs(); render(); });
-$('unblockedOnly').addEventListener('change', e => { state.unblockedOnly = e.target.checked; savePrefs(); render(); });
+$('search').addEventListener('input', e => { state.query = e.target.value; render(); });
+$('unblockedOnly').addEventListener('click', () => { state.unblockedOnly = !state.unblockedOnly; savePrefs(); renderToolbar(); render(); });
 $('drawerClose').addEventListener('click', closeTicket);
 // The drawer covers the board's right edge, where the browser would auto-scroll during a drag,
 // so dragging a card over the drawer scrolls the board on toward the lanes behind it.
@@ -990,6 +1010,5 @@ window.addEventListener('hashchange', () => {
 
 loadPrefs();
 readHash();
-$('hideEmpty').checked = state.hideEmpty;
-$('unblockedOnly').checked = state.unblockedOnly;
+renderToolbar();
 loadProjects().then(load).then(connectEvents).catch(e => toast(`Failed to load tickets: ${e.message}`));
