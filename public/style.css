@@ -21,16 +21,13 @@
   --s-wontfix: oklch(0.6 0.01 260);
   --s-other: var(--muted);
   --mono: "Geist Mono", ui-monospace, monospace;
-  /* Older names the lanes and the drawer use until they are restyled. */
-  --surface: var(--card); --lane: var(--surface-1);
+  /* Error, success and warning colours. */
   --danger: oklch(0.72 0.14 25); --danger-bg: oklch(0.25 0.04 25);
   --ok: oklch(0.75 0.13 150); --ok-bg: oklch(0.25 0.04 150);
   --warn: oklch(0.8 0.13 80); --warn-bg: oklch(0.26 0.04 80);
-  --shadow: 0 1px 2px rgb(0 0 0 / .4);
-  /* Filled agent state badges (agentBadge in app.js). --a-text sits on all of them. */
+  /* Agent state colours: the drawer's filled badges (agentBadge in app.js, --a-text sits on all of them) and some card marks. */
   --a-running: oklch(0.78 0.12 205); --a-idle: var(--s-ready-for-human); --a-text: var(--bg);
   --a-waiting: var(--warn); --a-done: var(--ok); --a-failed: var(--danger); --a-stopped: var(--muted);
-  --drawer-width: min(640px, 100vw);
   color-scheme: dark;
 }
 
@@ -91,72 +88,85 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 @keyframes tvpulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.75); } }
 @media (prefers-reduced-motion: reduce) { .run-dot { animation: none; } }
 
-.board {
-  flex: 1; display: flex; gap: 12px; padding: 14px 16px; overflow-x: auto; align-items: flex-start;
+.main { flex: 1; min-height: 0; display: flex; }
+.board { flex: 1; min-width: 0; display: flex; gap: 12px; padding: 16px; overflow-x: auto; overflow-y: hidden; align-items: stretch; }
+.lane { flex: 0 0 276px; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; border-radius: 8px; }
+/* A card dragged over a lane that takes it. */
+.lane.drop, .lane-collapsed.drop { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.lane-head { flex: none; display: flex; align-items: center; gap: 8px; height: 28px; padding: 2px 4px; font-size: 13px; font-weight: 600; }
+.lane-head .dot, .lane-collapsed .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--lane-color, var(--s-other)); }
+.lane-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lane-head .count { color: oklch(0.62 0.008 260); font: 500 12px var(--mono); font-variant-numeric: tabular-nums; }
+.ghost-btn {
+  margin-left: auto; height: 24px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent;
+  color: oklch(0.62 0.008 260); font: inherit; font-size: 12px; font-weight: 400; cursor: pointer;
 }
-.lane {
-  /* Equal widths: same basis, same grow, and min-width: 0 so long content can't widen a lane. */
-  flex: 1 0 280px; min-width: 0; background: var(--lane); border-radius: 10px; display: flex; flex-direction: column;
-  max-height: 100%; border: 2px solid transparent; transition: border-color .1s;
+.ghost-btn:hover { background: var(--surface-2); color: var(--text); }
+.lane-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
+.lane-empty { padding: 14px; border: 1px dashed oklch(0.28 0.006 260); border-radius: 8px; color: oklch(0.6 0.008 260); font-size: 13px; text-align: center; }
+.lane-collapsed {
+  flex: 0 0 36px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0; border-radius: 8px;
+  border: 1px solid oklch(0.24 0.006 260); background: oklch(0.18 0.005 260); color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer;
 }
-.lane.drop { border-color: var(--accent); }
-.lane-head {
-  display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; font-weight: 600;
-  position: sticky; top: 0;
-}
-.lane-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--lane-color, var(--s-other)); }
-.lane-head .count { margin-left: auto; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
-.lane-body { padding: 4px 8px 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+.lane-collapsed .dot { width: 7px; height: 7px; }
+.lane-collapsed .lane-name { writing-mode: vertical-rl; }
+.lane-collapsed:hover { background: oklch(0.21 0.006 260); }
+.lane-collapsed:focus-visible, .ghost-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .card {
-  background: var(--surface); border-radius: 8px; padding: 9px 10px; box-shadow: var(--shadow);
-  border-left: 3px solid var(--lane-color, var(--s-other)); cursor: pointer; text-align: left;
-  font: inherit; color: inherit; border-top: 0; border-right: 0; border-bottom: 0; width: 100%;
+  flex: none; display: flex; flex-direction: column; gap: 7px; padding: 11px 12px 10px; border-radius: 8px; cursor: pointer;
+  background: var(--card); border: 1px solid var(--border); color: inherit; text-align: left;
 }
-.card:hover { outline: 1px solid var(--border); }
-.card:focus-visible { outline: 2px solid var(--accent); }
-.card.selected { outline: 2px solid var(--accent); }
+.card:hover { border-color: oklch(0.4 0.01 260); }
+.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card.selected { background: oklch(0.26 0.035 255); border-color: oklch(0.66 0.13 255); }
+.card.dim { opacity: .66; }
 .card.dragging { opacity: .45; }
 .card[draggable] { cursor: grab; }
-.card-top { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
-.card-num { font-family: var(--mono); font-weight: 500; }
-.card-feature { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-top { display: flex; align-items: center; gap: 8px; min-width: 0; color: oklch(0.64 0.008 260); font-size: 12px; line-height: 18px; }
+.card-num { font-family: var(--mono); }
+.card-feature { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-blocked { color: var(--s-needs-info); white-space: nowrap; }
+.card-unblocked { color: oklch(0.78 0.13 150); white-space: nowrap; }
 .copy-btn {
   margin-left: auto; background: none; border: 0; padding: 0 4px; border-radius: 4px; cursor: pointer;
-  color: var(--muted); font: inherit; font-size: 13px; line-height: 1.2; opacity: 0;
+  color: var(--muted); font: inherit; font-size: 13px; line-height: 18px; opacity: 0;
 }
 .card:hover .copy-btn, .card:focus-within .copy-btn, .copy-btn:focus-visible { opacity: 1; }
 .copy-btn:hover { background: var(--bg); color: var(--text); }
 @media (hover: none) { .copy-btn { opacity: 1; } }
-.card-title { overflow-wrap: anywhere; font-weight: 600; margin: 3px 0 4px; }
-.card-summary {
-  overflow-wrap: anywhere; color: var(--muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical; overflow: hidden;
-}
-.card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 7px; font-size: 12px; }
+.card-title { font-size: 14px; font-weight: 500; line-height: 1.35; text-wrap: pretty; overflow-wrap: anywhere; }
+.card-excerpt { font-size: 12.5px; line-height: 1.4; color: oklch(0.64 0.008 260); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Row 4: the agent state and other marks, then the criteria bar at the right. */
+.card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 18px; font-size: 12px; color: oklch(0.78 0.006 260); }
+.mark { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.mark.waiting { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.mark.muted { color: oklch(0.64 0.008 260); }
+.mark.running { color: oklch(0.8 0.1 205); }
+.mark.waiting, .mark.warn { color: var(--warn); }
+.mark.idle { color: var(--a-idle); }
+.mark.done { color: oklch(0.78 0.13 150); }
+.mark.failed { color: var(--danger); }
+.mark.stopped { color: oklch(0.8 0.12 25); }
+.card-foot .spacer { flex: 1 0 0; }
+.criteria { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
+.progress { width: 44px; height: 4px; border-radius: 2px; background: oklch(0.3 0.006 260); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: oklch(0.72 0.13 150); }
+.progress-label { color: oklch(0.64 0.008 260); font-family: var(--mono); }
 .badge {
   display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px;
   background: var(--bg); color: var(--muted); border: 1px solid var(--border); white-space: nowrap;
 }
-.card-foot .badge { white-space: normal; overflow-wrap: anywhere; }
 .badge.blocked { background: var(--danger-bg); color: var(--danger); border-color: transparent; }
-.badge.ready { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
-.progress { flex: 1; min-width: 50px; height: 5px; border-radius: 3px; background: var(--bg); overflow: hidden; }
-.progress > span { display: block; height: 100%; background: var(--ok); }
-.progress-label { color: var(--muted); font-family: var(--mono); }
-.empty { color: var(--muted); font-size: 12px; text-align: center; padding: 10px 0; }
 
+/* Only there while a ticket is selected (hidden otherwise). */
 .drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-width); background: var(--panel);
-  border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgb(0 0 0 / .4); overflow-y: auto; z-index: 10;
+  flex: 0 0 max(520px, min(660px, 50vw)); min-width: 0; overflow-y: auto; background: var(--panel);
+  border-left: 1px solid var(--border);
 }
-/* On wide screens, reserve the drawer's width at the board's right end so every lane can be scrolled clear of it,
-   and so scrollIntoView keeps the selected card out from under it. Narrow screens keep the drawer as a plain overlay. */
-@media (min-width: 960px) {
-  /* 960px leaves room for at least one 280px lane beside a full (640px) drawer. The 16px keeps the board's own right gutter. */
-  body:has(> .drawer:not([hidden])) .board {
-    --drawer-reserve: calc(var(--drawer-width) + 16px); padding-right: var(--drawer-reserve); scroll-padding-right: var(--drawer-reserve);
-  }
+/* Too narrow for the board beside the drawer: the drawer covers the board. */
+@media (max-width: 760px) {
+  .drawer { position: fixed; inset: 0; z-index: 10; border-left: 0; }
 }
 .drawer-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
 .drawer-head h2 { margin: 4px 0 8px; font-size: 19px; }
@@ -236,11 +246,6 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
   color: oklch(0.95 0.004 260); font-size: 13.5px; overflow-wrap: anywhere;
 }
 
-@media (max-width: 640px) {
-  .board { padding: 12px 16px; }
-  .lane { flex-basis: 85vw; }
-}
-
 /* Agent state badges: one filled colour per state, so the state reads at a glance on cards and in the drawer. */
 .badge.agent-state { border-color: transparent; color: var(--a-text); font-weight: 500; }
 .badge.agent-state.waiting { background: var(--a-waiting); }
@@ -300,7 +305,6 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .flagged { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; }
 .error-text { color: var(--danger); overflow-wrap: anywhere; white-space: pre-wrap; }
 /* Worktree processes: a badge on the card in any lane, and a killable list in the agent panel. */
-.badge.processes { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
 .process-list { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .process-list .agent-head .btn { margin-left: auto; }
 .process-list ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
@@ -312,7 +316,6 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .merge-conflict strong { color: var(--danger); }
 .merge-conflict ul { margin: 0; padding-left: 18px; }
 .merge-conflict code { overflow-wrap: anywhere; }
-.badge.merging { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
 .merge-conflict.merging { border-color: var(--warn); background: var(--warn-bg); }
 .merge-conflict.merging strong { color: var(--warn); }
 
