@@ -141,7 +141,6 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .card-foot .badge { white-space: normal; overflow-wrap: anywhere; }
 .badge.blocked { background: var(--danger-bg); color: var(--danger); border-color: transparent; }
 .badge.ready { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
-.badge.status { border-color: var(--lane-color); color: var(--text); }
 .progress { flex: 1; min-width: 50px; height: 5px; border-radius: 3px; background: var(--bg); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--ok); }
 .progress-label { color: var(--muted); font-family: var(--mono); }

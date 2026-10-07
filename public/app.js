@@ -558,7 +558,7 @@ function renderDrawer() {
   $('drawerTitle').textContent = t.title;
   renderCommands(t, a);
 
-  // Ticket 04 moves these into the Ticket section.
+  // The tickets this one is blocked by and blocks.
   const byNum = new Map(currentTickets().filter(o => o.feature === t.feature).map(o => [Number(o.number), o]));
   const link = n => {
     const o = byNum.get(Number(n));
@@ -592,9 +592,13 @@ function renderCommands(t, a) {
     el('div', { class: 'menu-divider', role: 'separator' }),
     el('div', { class: 'menu-label', id: 'moveLabel' }, 'Move via /triage'),
     el('div', { role: 'group', 'aria-labelledby': 'moveLabel' },
-      KNOWN_COLORS.map(s => s === t.status
-        ? item([el('span', { class: 'dot', style: `--lane-color:${laneColor(s)}` }), s], null, null, { class: 'menu-item current', 'aria-current': 'true' })
-        : item([el('span', { class: 'dot', style: `--lane-color:${laneColor(s)}` }), s], triageCommand(t, s), '/triage command'))));
+      // Every status, in lane order; the current one is highlighted and copies nothing.
+      KNOWN_COLORS.map(s => {
+        const text = [el('span', { class: 'dot', style: `--lane-color:${laneColor(s)}` }), s];
+        return s === t.status
+          ? item(text, null, null, { class: 'menu-item current', 'aria-current': 'true' })
+          : item(text, triageCommand(t, s), '/triage command');
+      })));
   setCommandsOpen(state.commandsOpen);
 }
 
@@ -645,7 +649,7 @@ function renderActions(t, a) {
   fill($('drawerActions'),
     buttons.map(({ name, style }) => {
       const [text, attrs, onclick] = make[name]();
-      return btn(text, { ...attrs, class: `btn lg${style === 'default' ? '' : ` ${style}`}` }, onclick);
+      return btn(text, { ...attrs, class: `btn lg ${style}` }, onclick);
     }),
     note ? el('span', { class: 'muted' }, note) : null);
 }
@@ -991,6 +995,16 @@ $('search').addEventListener('input', e => { state.query = e.target.value; rende
 $('unblockedOnly').addEventListener('click', () => { state.unblockedOnly = !state.unblockedOnly; savePrefs(); renderToolbar(); render(); });
 $('drawerClose').addEventListener('click', closeTicket);
 $('commandsBtn').addEventListener('click', () => setCommandsOpen(!state.commandsOpen));
+// Arrow keys move between the menu's items; ArrowDown on the button opens it on the first one.
+$('commands').addEventListener('keydown', e => {
+  if (!['ArrowDown', 'ArrowUp'].includes(e.key)) return;
+  e.preventDefault();
+  if (!state.commandsOpen) setCommandsOpen(true);
+  const items = [...$('commandsMenu').querySelectorAll('.menu-item')];
+  const i = items.indexOf(document.activeElement);
+  const next = i < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1) : (i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+  items[next].focus();
+});
 document.addEventListener('click', e => { if (state.commandsOpen && !$('commands').contains(e.target)) setCommandsOpen(false); });
 // The drawer covers the board's right edge, where the browser would auto-scroll during a drag,
 // so dragging a card over the drawer scrolls the board on toward the lanes behind it.

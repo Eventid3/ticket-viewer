@@ -54,7 +54,7 @@ test('live counts: running includes starting agents, to review counts ready-for-
 // ---- detail header actions ------------------------------------------------------------
 const { headerActions } = globalThis.TicketView;
 const ok = { ok: true, why: null };
-const names = r => r.buttons.map(b => `${b.name}:${b.style}`);
+const names = r => r.buttons.map(b => `${b.name}:${b.style || 'default'}`);
 const tk = (status, actions = {}, extra = {}) => ({ status, needsYou: false, actions: { moves: {}, ...actions }, ...extra });
 
 test('ready-for-review with an agent: Approve (green) and Open diff in meld, nothing else', () => {
@@ -107,7 +107,7 @@ test('an agent that needs you: Copy attach command is primary', () => {
 
 test('conflict actions follow the state buttons whenever the server shows them', () => {
   const t = tk('ready-for-review', { resolveConflicts: ok, mergeByHand: { ok: false, why: 'stop it first' }, moves: { resolved: ok } });
-  assert.deepEqual(names(headerActions(t, { state: 'done', bgId: 'b' })), ['approve:green', 'diff:default', 'resolveConflicts:default', 'mergeByHand:default']);
+  assert.deepEqual(names(headerActions(t, { state: 'done', bgId: 'b' })), ['approve:green', 'diff:default', 'resolveConflicts:primary', 'mergeByHand:default']);
   const running = tk('claimed', { stop: ok, mergeByHand: { ok: false, why: 'stop it first' }, moves: {} });
   assert.deepEqual(names(headerActions(running, { state: 'running', bgId: 'b' })), ['stop:stop', 'attach:default', 'mergeByHand:default']);
 });
@@ -116,4 +116,9 @@ test('buttons for actions the server leaves out are not shown', () => {
   assert.deepEqual(names(headerActions(tk('ready-for-agent', { moves: {} }), null)), ['implement:default']);
   assert.deepEqual(names(headerActions(tk('ready-for-human', { moves: {} }), null)), []);
   assert.deepEqual(names(headerActions(tk('claimed', { moves: {} }), { state: 'running' })), [], 'no attach without a session');
+});
+
+test('an agent that needs you outside claimed: Copy attach command leads as the only primary', () => {
+  const t = tk('ready-for-human', { stop: ok, moves: { resolved: ok } }, { needsYou: true });
+  assert.deepEqual(names(headerActions(t, { state: 'idle', bgId: 'b' })), ['attach:primary', 'markResolved:default']);
 });
