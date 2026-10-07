@@ -6,10 +6,10 @@ const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
-const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts } = TicketView;
+const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText } = TicketView;
 const $ = id => document.getElementById(id);
-// emptyLanes: show, collapse or hide the lanes with no tickets (collapse shows them until collapsed lanes exist).
-const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {} };
+// emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
+const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {} };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
@@ -31,7 +31,7 @@ function loadPrefs() {
   } catch { /* storage unavailable */ }
 }
 function savePrefs() {
-  try { localStorage.setItem('ticket-viewer', JSON.stringify({ emptyLanes: state.emptyLanes, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
+  try { localStorage.setItem('ticket-viewer', JSON.stringify({ emptyLanes: state.emptyLanes, expandedLanes: state.expandedLanes, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
 }
 
 // ---- data -------------------------------------------------------------------------------
@@ -352,8 +352,8 @@ function render() {
 
   board.replaceChildren(...lanes.map(status => {
     const cards = visible.filter(t => (t.status || NO_STATUS) === status);
-    if (state.emptyLanes === 'hide' && cards.length === 0) return null;
-    return renderLane(status, cards);
+    const view = laneView(cards.length, state.emptyLanes, state.expandedLanes.includes(status));
+    return view === 'hidden' ? null : view === 'collapsed' ? renderCollapsedLane(status) : renderLane(status, cards, view === 'expanded');
   }).filter(Boolean));
 
   board.scrollLeft = boardScroll;
@@ -390,48 +390,67 @@ function segmented(box, options, value, onpick) {
   }, text)));
 }
 
-function renderLane(status, cards) {
-  const body = el('div', { class: 'lane-body', 'data-status': status },
-    cards.length ? cards.map(renderCard) : el('div', { class: 'empty' }, 'No tickets'));
-  const lane = el('section', { class: 'lane', style: `--lane-color:${laneColor(status)}` },
-    el('div', { class: 'lane-head' },
-      el('span', { class: 'dot' }), status || 'no status', el('span', { class: 'count' }, cards.length)),
-    body);
+// Expands or collapses the empty lane `status` by hand, and keeps keyboard focus on that lane's toggle.
+function toggleLane(status) {
+  const expanded = state.expandedLanes.includes(status);
+  state.expandedLanes = expanded ? state.expandedLanes.filter(s => s !== status) : [...state.expandedLanes, status];
+  savePrefs();
+  render();
+  [...$('board').querySelectorAll('[data-lane-toggle]')].find(b => b.dataset.laneToggle === status)?.focus();
+}
 
+// Lets cards be dropped on `target`, a lane or a collapsed lane, to move them to `status`.
+function dropTarget(target, status) {
   const accepts = () => state.dragging && canMove(state.dragging, status);
-  lane.addEventListener('dragover', e => { if (accepts()) { e.preventDefault(); lane.classList.add('drop'); } });
-  lane.addEventListener('dragleave', e => { if (!lane.contains(e.relatedTarget)) lane.classList.remove('drop'); });
-  lane.addEventListener('drop', e => {
+  target.addEventListener('dragover', e => { if (accepts()) { e.preventDefault(); target.classList.add('drop'); } });
+  target.addEventListener('dragleave', e => { if (!target.contains(e.relatedTarget)) target.classList.remove('drop'); });
+  target.addEventListener('drop', e => {
     e.preventDefault();
-    lane.classList.remove('drop');
+    target.classList.remove('drop');
     if (accepts()) moveTicket(state.dragging, status);
   });
+  return target;
+}
 
-  return lane;
+// `expanded`: an empty lane expanded by hand, which gets a Collapse button.
+function renderLane(status, cards, expanded = false) {
+  const name = status || 'no status';
+  return dropTarget(el('section', { class: 'lane', style: `--lane-color:${laneColor(status)}` },
+    el('div', { class: 'lane-head' },
+      el('span', { class: 'dot' }), el('span', { class: 'lane-name' }, name), el('span', { class: 'count' }, cards.length),
+      expanded ? el('button', {
+        class: 'ghost-btn', type: 'button', 'data-lane-toggle': status, 'aria-label': `Collapse the ${name} lane`, onclick: () => toggleLane(status),
+      }, 'Collapse') : null),
+    el('div', { class: 'lane-body', 'data-status': status },
+      cards.length ? cards.map(renderCard) : el('div', { class: 'lane-empty' }, 'No tickets'))), status);
+}
+
+// An empty lane in Collapse mode: a narrow button with the lane's name, which expands the lane.
+function renderCollapsedLane(status) {
+  const name = status || 'no status';
+  return dropTarget(el('button', {
+    class: 'lane-collapsed', type: 'button', style: `--lane-color:${laneColor(status)}`, 'data-lane-toggle': status,
+    title: 'Expand lane', 'aria-label': `Expand the empty ${name} lane`, onclick: () => toggleLane(status),
+  }, el('span', { class: 'dot' }), el('span', { class: 'lane-name' }, name)), status);
 }
 
 function renderCard(t) {
-  const pct = t.checks.total ? Math.round(100 * t.checks.done / t.checks.total) : 0;
-  const foot = [];
-  if (t.blocked) foot.push(el('span', { class: 'badge blocked', title: `Waiting on ${t.openBlockers.join(', ')}` }, `⛔ blocked by ${t.openBlockers.join(', ')}`));
-  else if (!DONE.has(t.status) && t.blockedBy.length) foot.push(el('span', { class: 'badge ready', title: 'All blockers are done' }, '✓ unblocked'));
   const agent = agentOf(t);
-  if (agent && !DONE.has(t.status)) foot.push(agentBadge(agent));
-  if (agent?.processes?.length) foot.push(processBadge(agent.processes));
-  if (agent?.merging) foot.push(mergingBadge(agent));
-  else if (agent?.conflict) foot.push(conflictBadge(agent));
-  if (t.type) foot.push(el('span', { class: 'badge' }, t.type));
-  if (t.comments) foot.push(el('span', { class: 'badge', title: 'Comments' }, `💬 ${t.comments}`));
-  if (t.checks.total) {
-    foot.push(el('span', { class: 'progress', title: `${t.checks.done} of ${t.checks.total} criteria checked` }, el('span', { style: `width:${pct}%` })));
-    foot.push(el('span', { class: 'progress-label' }, `${t.checks.done}/${t.checks.total}`));
-  }
+  const marks = [];
+  if (agent && !DONE.has(t.status)) marks.push(agentMark(agent));
+  if (agent?.processes?.length) marks.push(processMark(agent.processes));
+  if (agent?.merging) marks.push(mergingMark(agent));
+  else if (agent?.conflict) marks.push(conflictMark(agent));
+  if (t.comments) marks.push(el('span', { class: 'mark muted' }, plural(t.comments, 'comment')));
+  const progress = t.checks.total ? el('span', { class: 'criteria', title: `${t.checks.done} of ${t.checks.total} criteria checked` },
+    el('span', { class: 'progress' }, el('span', { style: `width:${Math.round(100 * t.checks.done / t.checks.total)}%` })),
+    el('span', { class: 'progress-label' }, `${t.checks.done}/${t.checks.total}`)) : null;
+  const excerpt = plainText(t.summary);
 
   const next = nextCommand(t);
   const movable = Object.values(t.actions.moves).some(m => m.ok);
   const card = el('div', {
-    class: 'card' + (state.ticket === t.id ? ' selected' : ''),
-    style: `--lane-color:${laneColor(t.status)}`,
+    class: 'card' + (state.ticket === t.id ? ' selected' : '') + (DONE.has(t.status) ? ' dim' : ''),
     tabindex: '0', role: 'button', draggable: movable ? 'true' : null,
     ondragstart: e => { state.dragging = t; e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); },
     ondragend: () => { state.dragging = null; card.classList.remove('dragging'); },
@@ -440,17 +459,54 @@ function renderCard(t) {
   },
     el('div', { class: 'card-top' },
       el('span', { class: 'card-num' }, label(t)),
-      state.feature === ALL ? el('span', { class: 'card-feature' }, `· ${t.feature}`) : null,
+      t.type ? el('span', {}, t.type) : null,
+      state.feature === ALL ? el('span', { class: 'card-feature' }, t.feature) : null,
+      t.blocked ? el('span', { class: 'card-blocked', title: `Waiting on ${t.openBlockers.map(n => `#${n}`).join(', ')}` },
+        `blocked by ${t.openBlockers.map(n => `#${n}`).join(', ')}`) : null,
       next ? el('button', {
         class: 'copy-btn', title: `Copy "${next.text}"`, 'aria-label': `Copy ${next.what}`,
         onclick: e => { e.stopPropagation(); copy(next.text, next.what); },
         onkeydown: e => e.stopPropagation(),
       }, '⧉') : null),
     el('div', { class: 'card-title' }, t.title),
-    t.summary ? el('div', { class: 'card-summary' }, t.summary) : null,
-    foot.length ? el('div', { class: 'card-foot' }, foot) : null);
+    excerpt ? el('div', { class: 'card-excerpt', title: excerpt }, excerpt) : null,
+    marks.length || progress ? el('div', { class: 'card-foot' }, marks, el('span', { class: 'spacer' }), progress) : null);
   return card;
 }
+
+// The agent's state on a card, as coloured text. Cards in resolved and wontfix lanes show none.
+function agentMark(a) {
+  const mark = (cls, attrs, ...text) => el('span', { class: `mark ${cls}`, ...attrs }, ...text);
+  switch (a.state) {
+    case 'starting': return mark('running', {}, el('span', { class: 'run-dot' }), 'Agent starting');
+    case 'running': return mark('running', { title: `Working on ${a.branch}` }, el('span', { class: 'run-dot' }), 'Agent running');
+    case 'waiting': return mark('waiting', { title: `Attach to answer: ${attachCommand(a)}` }, `⚠ Needs you: ${a.waitingFor}`);
+    case 'idle': return mark('idle', { title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 Waiting for a reply');
+    case 'done': return mark('done', { title: a.branch }, '✓ Agent done');
+    case 'failed': return mark('failed', { title: a.error || '' }, '✕ Agent failed to start');
+    default: return mark('stopped', { title: 'The session is not running; attaching reopens it' }, '■ Agent stopped');
+  }
+}
+
+// Shown in every lane: a server left running after approval is exactly what you want to notice.
+function processMark(procs) {
+  const title = procs.map(p => `${p.pid}: ${p.command}`).join('\n');
+  return el('span', { class: 'mark warn', title }, `⚙ ${plural(procs.length, 'process')}`);
+}
+
+// A test merge of the ticket's branch into its reference branch fails.
+function conflictMark(a) {
+  const title = `Merging ${a.branch} into ${a.ref} conflicts in:\n${a.conflict.files.join('\n')}`;
+  return el('span', { class: 'mark failed', title }, `⚔ Conflicts (${plural(a.conflict.files.length, 'file')})`);
+}
+
+// The ticket's worktree is mid-merge (MERGE_HEAD exists), whoever started the merge.
+const mergingText = a => `⚔ merge in progress (${a.merging.unresolved} unresolved)`;
+function mergingMark(a) {
+  return el('span', { class: 'mark warn', title: `Merging ${a.ref || 'a branch'} into ${a.branch} in the worktree: finish or abort it in the drawer` }, mergingText(a));
+}
+
+function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
 
 function agentBadge(a) {
   const badge = (state, attrs, text) => el('span', { class: `badge agent-state ${state}`, ...attrs }, text);
@@ -464,26 +520,6 @@ function agentBadge(a) {
     default: return badge('stopped', { title: 'The session is not running; attaching reopens it' }, '■ agent stopped');
   }
 }
-
-// Shown in every lane: a server left running after approval is exactly what you want to notice.
-function processBadge(procs) {
-  const title = procs.map(p => `${p.pid}: ${p.command}`).join('\n');
-  return el('span', { class: 'badge processes', title }, `⚙ ${plural(procs.length, 'process')}`);
-}
-
-// A test merge of the ticket's branch into its reference branch fails.
-function conflictBadge(a) {
-  const title = `Merging ${a.branch} into ${a.ref} conflicts in:\n${a.conflict.files.join('\n')}`;
-  return el('span', { class: 'badge blocked', title }, `⚔ conflicts (${plural(a.conflict.files.length, 'file')})`);
-}
-
-// The ticket's worktree is mid-merge (MERGE_HEAD exists), whoever started the merge.
-const mergingText = a => `⚔ merge in progress (${a.merging.unresolved} unresolved)`;
-function mergingBadge(a) {
-  return el('span', { class: 'badge merging', title: `Merging ${a.ref || 'a branch'} into ${a.branch} in the worktree: finish or abort it in the drawer` }, mergingText(a));
-}
-
-function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
 
 function openTicket(id) {
   state.ticket = id;
@@ -973,9 +1009,6 @@ $('feature').addEventListener('change', e => { state.feature = e.target.value; s
 $('search').addEventListener('input', e => { state.query = e.target.value; render(); });
 $('unblockedOnly').addEventListener('click', () => { state.unblockedOnly = !state.unblockedOnly; savePrefs(); renderToolbar(); render(); });
 $('drawerClose').addEventListener('click', closeTicket);
-// The drawer covers the board's right edge, where the browser would auto-scroll during a drag,
-// so dragging a card over the drawer scrolls the board on toward the lanes behind it.
-$('drawer').addEventListener('dragover', () => { if (state.dragging) $('board').scrollLeft += 20; });
 document.addEventListener('keydown', e => {
   if (projectsDialogOpen()) return; // the dialog has its own keys (Escape closes it)
   if (e.key === 'Escape' && state.ticket) closeTicket();
