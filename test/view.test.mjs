@@ -164,3 +164,23 @@ test('an agent that needs you outside claimed: Copy attach command leads as the 
   const t = tk('ready-for-human', { stop: ok, moves: { resolved: ok } }, { needsYou: true });
   assert.deepEqual(names(headerActions(t, { state: 'idle', bgId: 'b' })), ['attach:primary', 'markResolved:default']);
 });
+
+const { LAYOUTS, readLayout, rowMarks } = globalThis.TicketView;
+
+test('layouts are Board and Strip; a missing or unknown saved layout is Board', () => {
+  assert.deepEqual(LAYOUTS.map(l => l.value), ['board', 'strip']);
+  assert.deepEqual(LAYOUTS.map(l => l.title), ['Board with detail drawer', 'Lanes on top, detail below']);
+  assert.equal(readLayout(null), 'board');
+  assert.equal(readLayout('sideways'), 'board');
+  assert.equal(readLayout('strip'), 'strip');
+});
+
+test('row card marks: the running dot or ✓ on active tickets, plus ⚠ when the agent needs you', () => {
+  const t = (status, needsYou = false) => ({ status, needsYou });
+  assert.deepEqual(rowMarks(t('claimed'), { state: 'running' }), { running: true, done: false, needsYou: false });
+  assert.deepEqual(rowMarks(t('claimed'), { state: 'starting' }), { running: true, done: false, needsYou: false });
+  assert.deepEqual(rowMarks(t('ready-for-review'), { state: 'done' }), { running: false, done: true, needsYou: false });
+  assert.deepEqual(rowMarks(t('claimed', true), { state: 'waiting' }), { running: false, done: false, needsYou: true });
+  assert.deepEqual(rowMarks(t('ready-for-agent'), null), { running: false, done: false, needsYou: false });
+  assert.deepEqual(rowMarks(t('resolved'), { state: 'done' }), { running: false, done: false, needsYou: false }, 'resolved tickets show no agent mark');
+});

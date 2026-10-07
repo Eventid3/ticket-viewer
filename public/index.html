@@ -25,9 +25,10 @@
       <span title="Agents running or starting"><span class="run-dot"></span><span id="countRunning">0</span> running</span>
       <span title="Tickets in ready-for-review"><span class="dot review-dot"></span><span id="countReview">0</span> to review</span>
     </div>
+    <div id="layout" class="seg" role="group" aria-label="Layout"></div>
   </header>
 
-  <div class="main">
+  <div id="main" class="main" data-layout="board">
   <main id="board" class="board"></main>
 
   <aside id="drawer" class="drawer" data-keep="drawer" hidden>
@@ -49,6 +50,7 @@
       <section id="drawerTicket" class="ticket-section" aria-label="Ticket"></section>
     </div>
   </aside>
+  <div id="detailEmpty" class="detail-empty" hidden>Select a ticket</div>
   </div>
   <div id="toast" class="toast" hidden></div>
 

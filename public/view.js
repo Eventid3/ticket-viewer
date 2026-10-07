@@ -2,6 +2,27 @@
 // Pure board-view helpers, loaded before app.js. test/view.test.mjs imports this file and reads globalThis.TicketView.
 (() => {
   const EMPTY_LANES = ['show', 'collapse', 'hide'];
+  // The top bar's layout switcher, in order. The choice is saved under tv:layout.
+  const LAYOUTS = [
+    { value: 'board', label: 'Board', title: 'Board with detail drawer' },
+    { value: 'strip', label: 'Strip', title: 'Lanes on top, detail below' },
+  ];
+
+  // The saved layout, or Board when there's none or it isn't one of LAYOUTS.
+  function readLayout(saved) {
+    return LAYOUTS.some(l => l.value === saved) ? saved : 'board';
+  }
+
+  // What a Strip row card shows after its title: the running dot or ✓ for the agent of an active ticket
+  // (resolved and wontfix show none, like the Board cards), and ⚠ while the agent needs you.
+  function rowMarks(t, a) {
+    const active = !['resolved', 'done', 'closed', 'wontfix'].includes(t.status);
+    return {
+      running: active && ['running', 'starting'].includes(a?.state),
+      done: active && a?.state === 'done',
+      needsYou: !!t.needsYou,
+    };
+  }
 
   // The search box matches a ticket's number (a leading # is ignored), title or body text.
   function matchesQuery(t, query) {
@@ -89,5 +110,5 @@
     return { buttons, note: null };
   }
 
-  globalThis.TicketView = { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions };
+  globalThis.TicketView = { EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions };
 })();

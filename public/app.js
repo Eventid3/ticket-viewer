@@ -6,10 +6,10 @@ const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
-const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions } = TicketView;
+const { EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions } = TicketView;
 const $ = id => document.getElementById(id);
-// emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
-const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
+// layout: board or strip (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
+const state = { layout: 'board', projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
@@ -29,9 +29,11 @@ function loadPrefs() {
   try {
     Object.assign(state, readPrefs(JSON.parse(localStorage.getItem('ticket-viewer') || '{}')));
   } catch { /* storage unavailable */ }
+  try { state.layout = readLayout(localStorage.getItem('tv:layout')); } catch { }
 }
 function savePrefs() {
   try { localStorage.setItem('ticket-viewer', JSON.stringify({ emptyLanes: state.emptyLanes, expandedLanes: state.expandedLanes, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
+  try { localStorage.setItem('tv:layout', state.layout); } catch { }
 }
 
 // ---- data -------------------------------------------------------------------------------
@@ -337,6 +339,7 @@ function renderEmpty() {
     state.projects && !state.project ? btn('+ Add project', { class: 'btn primary' }, openProjectsDialog) : null));
   renderCounts([]);
   $('drawer').hidden = true;
+  $('detailEmpty').hidden = true;
 }
 
 function render() {
@@ -344,6 +347,7 @@ function render() {
   const all = currentTickets();
   const visible = all.filter(matches);
   const lanes = laneList(all);
+  const strip = state.layout === 'strip';
   const board = $('board');
   const scroll = new Map([...board.querySelectorAll('.lane-body')].map(b => [b.dataset.status, b.scrollTop]));
   const boardScroll = board.scrollLeft;
@@ -351,7 +355,7 @@ function render() {
   board.replaceChildren(...lanes.map(status => {
     const cards = visible.filter(t => (t.status || NO_STATUS) === status);
     const view = laneView(cards.length, state.emptyLanes, state.expandedLanes.includes(status));
-    return view === 'hidden' ? null : view === 'collapsed' ? renderCollapsedLane(status) : renderLane(status, cards, view === 'expanded');
+    return view === 'hidden' ? null : view === 'collapsed' ? renderCollapsedLane(status) : renderLane(status, cards, view === 'expanded', strip);
   }).filter(Boolean));
 
   board.scrollLeft = boardScroll;
@@ -370,6 +374,13 @@ function renderCounts(tickets) {
 
 // The top bar's toggles, drawn from state.
 function renderToolbar() {
+  $('main').dataset.layout = state.layout;
+  segmented($('layout'), LAYOUTS.map(l => [l.value, l.label, l.title]), state.layout, v => {
+    state.layout = v;
+    savePrefs();
+    renderToolbar();
+    render();
+  });
   $('unblockedOnly').setAttribute('aria-pressed', state.unblockedOnly);
   segmented($('emptyLanes'), EMPTY_LANES.map(v => [v, v[0].toUpperCase() + v.slice(1)]), state.emptyLanes, v => {
     state.emptyLanes = v;
@@ -411,16 +422,18 @@ function dropTarget(target, status) {
 }
 
 // `collapsible`: an empty lane expanded by hand, which gets a Collapse button.
-function renderLane(status, cards, collapsible = false) {
+// `strip`: a Strip layout lane, with compact row cards and no dragging.
+function renderLane(status, cards, collapsible = false, strip = false) {
   const name = laneName(status);
-  return dropTarget(el('section', { class: 'lane', style: `--lane-color:${laneColor(status)}` },
+  const lane = el('section', { class: 'lane', style: `--lane-color:${laneColor(status)}` },
     el('div', { class: 'lane-head' },
       el('span', { class: 'dot' }), el('span', { class: 'lane-name' }, name), el('span', { class: 'count' }, cards.length),
       collapsible ? el('button', {
         class: 'ghost-btn', type: 'button', 'data-lane-toggle': status, 'aria-label': `Collapse the ${name} lane`, onclick: () => toggleLane(status),
       }, 'Collapse') : null),
     el('div', { class: 'lane-body', 'data-status': status },
-      cards.length ? cards.map(renderCard) : el('div', { class: 'lane-empty' }, 'No tickets'))), status);
+      cards.length ? cards.map(strip ? renderRowCard : renderCard) : el('div', { class: 'lane-empty' }, 'No tickets')));
+  return strip ? lane : dropTarget(lane, status);
 }
 
 // An empty lane in Collapse mode: a narrow button with the lane's name, which expands the lane.
@@ -471,6 +484,23 @@ function renderCard(t) {
     excerpt ? el('div', { class: 'card-excerpt', title: excerpt }, excerpt) : null,
     marks.length || progress ? el('div', { class: 'card-foot' }, marks, el('span', { class: 'spacer' }), progress) : null);
   return card;
+}
+
+// The Strip layout's one-line card: number, title, the agent's mark and the criteria progress.
+function renderRowCard(t) {
+  const { running, done, needsYou } = rowMarks(t, agentOf(t));
+  return el('div', {
+    class: 'row-card' + (state.ticket === t.id ? ' selected' : '') + (DONE.has(t.status) ? ' dim' : ''),
+    tabindex: '0', role: 'button', title: t.title,
+    onclick: () => openTicket(t.id),
+    onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(t.id); } },
+  },
+    el('span', { class: 'card-num' }, label(t)),
+    el('span', { class: 'row-title' }, t.title),
+    running ? el('span', { class: 'run-dot', title: 'Agent running' }) : null,
+    done ? el('span', { class: 'row-done', title: 'Agent done' }, '✓') : null,
+    needsYou ? el('span', { class: 'row-needs-you', title: 'The agent needs you' }, '⚠') : null,
+    t.checks.total ? el('span', { class: 'row-progress', title: `${t.checks.done} of ${t.checks.total} criteria checked` }, `${t.checks.done}/${t.checks.total}`) : null);
 }
 
 // The agent's state on a card, as coloured text. Cards in resolved and wontfix lanes show none.
@@ -585,6 +615,8 @@ function restoreScroll(n) {
 function renderDrawer() {
   const drawer = $('drawer');
   const t = state.ticket && findTicket(state.ticket);
+  // The Strip layout always has its detail panel, saying so when nothing is selected.
+  $('detailEmpty').hidden = !!t || state.layout !== 'strip';
   if (!t) { drawer.hidden = true; setCommandsOpen(false); return; }
   drawer.hidden = false;
   const a = agentOf(t);
@@ -600,7 +632,7 @@ function renderDrawer() {
   renderActions(t, a);
   renderAgent();
   renderTicket(t);
-  document.querySelectorAll('.card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+  document.querySelectorAll('.card.selected, .row-card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
 }
 
 // The Ticket section: its blockers, then its subsections as parseSections (lib/tickets.mjs) splits them.
