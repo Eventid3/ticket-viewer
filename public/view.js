@@ -8,7 +8,12 @@
   const LAYOUTS = [
     { value: 'board', label: 'Board', title: 'Board with detail drawer' },
     { value: 'strip', label: 'Strip', title: 'Lanes on top, detail below' },
+    { value: 'list', label: 'List', title: 'Grouped list with detail' },
   ];
+  // The List layout's groups, most in need of attention first. Other statuses follow, then "no status".
+  const ATTENTION = ['ready-for-review', 'needs-info', 'ready-for-human', 'claimed', 'ready-for-agent', 'needs-triage', 'resolved', 'wontfix'];
+  // The List groups collapsed until you open them.
+  const COLLAPSED_GROUPS = ['resolved', 'wontfix'];
 
   // The saved layout, or Board when there's none or it isn't one of LAYOUTS.
   function readLayout(saved) {
@@ -26,6 +31,35 @@
     };
   }
 
+  // The List layout's groups: `{status, tickets}` in attention order, other statuses in the order first met, then no
+  // status (''). Groups without tickets are left out; each group's tickets are sorted by number (numbered ones first).
+  function listGroups(tickets) {
+    const statuses = [...ATTENTION];
+    for (const t of tickets) if (t.status && !statuses.includes(t.status)) statuses.push(t.status);
+    statuses.push('');
+    const num = t => (t.number == null ? Infinity : Number(t.number));
+    return statuses
+      .map(status => ({ status, tickets: tickets.filter(t => (t.status || '') === status).sort((a, b) => num(a) - num(b)) }))
+      .filter(g => g.tickets.length);
+  }
+
+  // A List row's second line for ticket `t` and its agent `a`: what's worth saying, joined with " · " ('' for nothing).
+  function listNote(t, a) {
+    const n = (count, word) => `${count} ${count === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`;
+    return [
+      t.blocked && `blocked by ${t.openBlockers.map(b => `#${b}`).join(', ')}`,
+      t.comments && n(t.comments, 'comment'),
+      !DONE.has(t.status) && t.needsYou && '⚠ needs you',
+      (a?.conflict || a?.merging) && '⚔ conflicts',
+      a?.processes?.length && `⚙ ${n(a.processes.length, 'process')}`,
+    ].filter(Boolean).join(' · ');
+  }
+
+  // The collapsed List groups as saved, or resolved and wontfix when nothing is saved yet.
+  function readCollapsedGroups(saved) {
+    return Array.isArray(saved) ? saved.filter(s => typeof s === 'string') : [...COLLAPSED_GROUPS];
+  }
+
   // The search box matches a ticket's number (a leading # is ignored), title or body text.
   function matchesQuery(t, query) {
     const q = query.trim().replace(/^#/, '').toLowerCase();
@@ -34,11 +68,11 @@
   }
 
   // The saved prefs, with defaults. The old hideEmpty checkbox becomes the Hide empty-lanes mode.
-  // expandedLanes: the statuses of the empty lanes you expanded by hand in Collapse mode.
+  // expandedLanes: the statuses of the empty lanes you expanded by hand in Collapse mode. collapsedGroups: the List groups you closed.
   function readPrefs(p) {
     const emptyLanes = EMPTY_LANES.includes(p.emptyLanes) ? p.emptyLanes : p.hideEmpty ? 'hide' : 'collapse';
     const expandedLanes = Array.isArray(p.expandedLanes) ? p.expandedLanes.filter(s => typeof s === 'string') : [];
-    return { emptyLanes, unblockedOnly: !!p.unblockedOnly, lastProject: typeof p.lastProject === 'string' ? p.lastProject : null, expandedLanes };
+    return { emptyLanes, unblockedOnly: !!p.unblockedOnly, lastProject: typeof p.lastProject === 'string' ? p.lastProject : null, expandedLanes, collapsedGroups: readCollapsedGroups(p.collapsedGroups) };
   }
 
   // How a lane with `count` cards is drawn in empty-lanes `mode`: full, hidden, collapsed (a narrow button), or
@@ -190,5 +224,5 @@
     };
   }
 
-  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage };
+  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, readCollapsedGroups, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage };
 })();

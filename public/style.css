@@ -184,8 +184,36 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .main[data-layout="strip"] .lane-collapsed { flex-basis: 34px; padding: 10px 0; font-size: 12px; }
 .main[data-layout="strip"] .lane-collapsed .lane-name { white-space: nowrap; }
 .main[data-layout="strip"] .drawer { flex: 1 1 auto; min-height: 0; border-left: 0; border-top: 1px solid var(--border); }
-/* Only shown in the Strip, with nothing selected. */
+/* Only shown in Strip and List, with nothing selected. */
 .detail-empty { flex: 1 1 auto; min-height: 0; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: center; background: var(--panel); color: oklch(0.6 0.008 260); font-size: 14px; }
+
+/* List layout: a 400px column of status groups on the left, scrolling down, and the detail panel beside it. */
+.main[data-layout="list"] .board { flex: 0 0 400px; flex-direction: column; gap: 10px; padding: 12px 12px 24px; overflow-x: hidden; overflow-y: auto; align-items: stretch; }
+.main[data-layout="list"] .drawer, .main[data-layout="list"] .detail-empty { flex: 1 1 auto; min-width: 0; border-top: 0; border-left: 1px solid var(--border); }
+.group {
+  flex: none; border-radius: 9px; background: var(--surface-1); border: 1px solid oklch(0.24 0.006 260); overflow: hidden;
+  box-shadow: inset 0 2px 0 var(--lane-color, var(--s-other));
+}
+.group-head {
+  width: 100%; display: flex; align-items: center; gap: 8px; padding: 11px 12px; border: 0; background: transparent;
+  color: var(--text); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer;
+}
+.group-head:hover { background: oklch(0.205 0.006 260); }
+.group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.group-head .chevron { flex: none; width: 12px; font-size: 11px; color: var(--muted); }
+.group-head .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--lane-color, var(--s-other)); }
+.group-head .count { color: oklch(0.62 0.008 260); font: 500 12px var(--mono); font-variant-numeric: tabular-nums; }
+.group-rows { display: flex; flex-direction: column; gap: 2px; padding: 0 6px 6px; }
+.list-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 4px 8px; align-items: baseline; padding: 9px 10px; border-radius: 7px; cursor: pointer; }
+.list-row:hover { background: oklch(0.215 0.006 260); }
+.list-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.list-row.selected { background: oklch(0.25 0.03 255); box-shadow: inset 2px 0 0 oklch(0.7 0.14 255); }
+.list-row.dim { opacity: .66; }
+.list-row .card-num { font: 12px var(--mono); color: var(--muted); }
+.list-title { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.list-marks { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--mono); }
+.list-marks .row-progress { font-size: 12px; }
+.list-note { grid-column: 2 / 4; font-size: 12px; color: var(--muted); }
 /* The Strip's one-line card; its hover, selected and dim states are the Board card's (.card). */
 .row-card {
   flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 6px; cursor: pointer;

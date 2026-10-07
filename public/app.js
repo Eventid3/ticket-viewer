@@ -5,10 +5,11 @@ const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 
-const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage } = TicketView;
+const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage } = TicketView;
 const $ = id => document.getElementById(id);
-// layout: board or strip (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
-const state = { layout: 'board', projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
+// layout: board, strip or list (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
+// collapsedGroups: the List layout's closed groups, by status.
+const state = { layout: 'board', projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], collapsedGroups: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
@@ -31,7 +32,7 @@ function loadPrefs() {
   try { state.layout = readLayout(localStorage.getItem('tv:layout')); } catch { /* storage unavailable */ }
 }
 function savePrefs() {
-  try { localStorage.setItem('ticket-viewer', JSON.stringify({ emptyLanes: state.emptyLanes, expandedLanes: state.expandedLanes, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
+  try { localStorage.setItem('ticket-viewer', JSON.stringify({ emptyLanes: state.emptyLanes, expandedLanes: state.expandedLanes, collapsedGroups: state.collapsedGroups, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
   try { localStorage.setItem('tv:layout', state.layout); } catch { }
 }
 
@@ -370,15 +371,17 @@ function render() {
   const strip = state.layout === 'strip';
   const board = $('board');
   const scroll = new Map([...board.querySelectorAll('.lane-body')].map(b => [b.dataset.status, b.scrollTop]));
-  const boardScroll = board.scrollLeft;
+  const { scrollLeft, scrollTop } = board;
 
-  board.replaceChildren(...lanes.map(status => {
+  if (state.layout === 'list') board.replaceChildren(...listGroups(visible).map(renderGroup));
+  else board.replaceChildren(...lanes.map(status => {
     const cards = visible.filter(t => (t.status || NO_STATUS) === status);
     const view = laneView(cards.length, state.emptyLanes, state.expandedLanes.includes(status));
     return view === 'hidden' ? null : view === 'collapsed' ? renderCollapsedLane(status) : renderLane(status, cards, view === 'expanded', strip);
   }).filter(Boolean));
 
-  board.scrollLeft = boardScroll;
+  board.scrollLeft = scrollLeft;
+  board.scrollTop = scrollTop;
   for (const b of board.querySelectorAll('.lane-body')) b.scrollTop = scroll.get(b.dataset.status) || 0;
 
   renderCounts(all);
@@ -402,6 +405,8 @@ function renderToolbar() {
     render();
   });
   $('unblockedOnly').setAttribute('aria-pressed', state.unblockedOnly);
+  // The List layout has groups, not lanes, so it has no empty lanes to show or hide.
+  $('emptyLanesField').hidden = state.layout === 'list';
   segmented($('emptyLanes'), EMPTY_LANES.map(v => [v, v[0].toUpperCase() + v.slice(1)]), state.emptyLanes, v => {
     state.emptyLanes = v;
     savePrefs();
@@ -525,6 +530,42 @@ function renderRowCard(t) {
     t.checks.total ? el('span', { class: 'row-progress', title: `${t.checks.done} of ${t.checks.total} criteria checked` }, `${t.checks.done}/${t.checks.total}`) : null);
 }
 
+// A List layout group: a header button that opens or closes it, then a row per ticket while it's open.
+function renderGroup({ status, tickets }) {
+  const name = laneName(status);
+  const open = !state.collapsedGroups.includes(status);
+  return el('section', { class: 'group', style: `--lane-color:${laneColor(status)}` },
+    el('button', {
+      class: 'group-head', type: 'button', 'aria-expanded': String(open), 'data-group-toggle': status, onclick: () => toggleGroup(status),
+    },
+      el('span', { class: 'chevron', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
+      el('span', { class: 'dot' }), el('span', { class: 'lane-name' }, name), el('span', { class: 'count' }, tickets.length)),
+    open ? el('div', { class: 'group-rows' }, tickets.map(renderListRow)) : null);
+}
+
+// Opens or closes the List group `status`, and keeps keyboard focus on its header.
+function toggleGroup(status) {
+  const closed = state.collapsedGroups.includes(status);
+  state.collapsedGroups = closed ? state.collapsedGroups.filter(s => s !== status) : [...state.collapsedGroups, status];
+  savePrefs();
+  render();
+  [...$('board').querySelectorAll('[data-group-toggle]')].find(b => b.dataset.groupToggle === status)?.focus();
+}
+
+// A List layout row: number, title, the agent's mark and the criteria progress, then a muted line of what else to know.
+function renderListRow(t) {
+  const { running, done } = rowMarks(t, agentOf(t));
+  const note = listNote(t, agentOf(t));
+  return el('div', cardAttrs(t, 'list-row'),
+    el('span', { class: 'card-num' }, label(t)),
+    el('span', { class: 'list-title' }, t.title),
+    el('span', { class: 'list-marks' },
+      running ? el('span', { class: 'run-dot', title: 'Agent running' }) : null,
+      done ? el('span', { class: 'row-done', title: 'Agent done' }, '✓') : null,
+      t.checks.total ? el('span', { class: 'row-progress', title: `${t.checks.done} of ${t.checks.total} criteria checked` }, `${t.checks.done}/${t.checks.total}`) : null),
+    note ? el('span', { class: 'list-note' }, note) : null);
+}
+
 // The agent's state on a card, as coloured text. Cards in resolved and wontfix lanes show none.
 function agentMark(a) {
   const mark = (cls, attrs, ...text) => el('span', { class: `mark ${cls}`, ...attrs }, ...text);
@@ -640,8 +681,8 @@ function restoreScroll(n) {
 function renderDrawer() {
   const drawer = $('drawer');
   const t = state.ticket && findTicket(state.ticket);
-  // The Strip layout always has its detail panel, saying so when nothing is selected.
-  $('detailEmpty').hidden = !!t || state.layout !== 'strip';
+  // Strip and List always have their detail panel, saying so when nothing is selected.
+  $('detailEmpty').hidden = !!t || state.layout === 'board';
   if (!t) { drawer.hidden = true; setCommandsOpen(false); return; }
   drawer.hidden = false;
   const a = agentOf(t);
@@ -657,7 +698,7 @@ function renderDrawer() {
   renderActions(t, a);
   renderAgent();
   renderTicket(t);
-  document.querySelectorAll('.card.selected, .row-card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+  document.querySelectorAll('.card.selected, .row-card.selected, .list-row.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
 }
 
 // The Ticket section: its blockers, then its subsections as parseSections (lib/tickets.mjs) splits them.

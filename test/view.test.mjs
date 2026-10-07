@@ -26,11 +26,11 @@ test('an empty query matches everything, including tickets without a number', ()
 });
 
 test('prefs default to collapsed empty lanes', () => {
-  assert.deepEqual(readPrefs({}), { emptyLanes: 'collapse', unblockedOnly: false, lastProject: null, expandedLanes: [] });
+  assert.deepEqual(readPrefs({}), { emptyLanes: 'collapse', unblockedOnly: false, lastProject: null, expandedLanes: [], collapsedGroups: ['resolved', 'wontfix'] });
 });
 
 test('prefs keep a valid empty-lanes mode and the other settings', () => {
-  assert.deepEqual(readPrefs({ emptyLanes: 'show', unblockedOnly: true, lastProject: 'p1' }), { emptyLanes: 'show', unblockedOnly: true, lastProject: 'p1', expandedLanes: [] });
+  assert.deepEqual(readPrefs({ emptyLanes: 'show', unblockedOnly: true, lastProject: 'p1' }), { emptyLanes: 'show', unblockedOnly: true, lastProject: 'p1', expandedLanes: [], collapsedGroups: ['resolved', 'wontfix'] });
   assert.equal(readPrefs({ emptyLanes: 'sideways' }).emptyLanes, 'collapse');
 });
 
@@ -167,12 +167,13 @@ test('an agent that needs you outside claimed: Copy attach command leads as the 
 
 const { LAYOUTS, readLayout, rowMarks } = globalThis.TicketView;
 
-test('layouts are Board and Strip; a missing or unknown saved layout is Board', () => {
-  assert.deepEqual(LAYOUTS.map(l => l.value), ['board', 'strip']);
-  assert.deepEqual(LAYOUTS.map(l => l.title), ['Board with detail drawer', 'Lanes on top, detail below']);
+test('layouts are Board, Strip and List; a missing or unknown saved layout is Board', () => {
+  assert.deepEqual(LAYOUTS.map(l => l.value), ['board', 'strip', 'list']);
+  assert.deepEqual(LAYOUTS.map(l => l.title), ['Board with detail drawer', 'Lanes on top, detail below', 'Grouped list with detail']);
   assert.equal(readLayout(null), 'board');
   assert.equal(readLayout('sideways'), 'board');
   assert.equal(readLayout('strip'), 'strip');
+  assert.equal(readLayout('list'), 'list');
 });
 
 test('row card marks: the running dot or ✓ on active tickets, plus ⚠ when the agent needs you', () => {
@@ -286,4 +287,41 @@ test('an unindented line right below a report bullet continues it', () => {
   assert.deepEqual(splitReport('S.\n\n- **Change:** foo\nbar\n\nAfter.'), {
     summary: 'S.', items: [{ label: 'Change', text: 'foo\nbar' }], rest: 'After.',
   });
+});
+
+const { listGroups, listNote, readCollapsedGroups } = globalThis.TicketView;
+
+
+test('list groups come in attention order, then other statuses, then no status; empty groups are left out', () => {
+  const tk = (number, status) => ({ number, status });
+  const tickets = [tk('01', 'resolved'), tk('02', 'needs-triage'), tk('03', 'blocked-upstream'), tk('04', ''), tk('05', 'ready-for-review'),
+    tk('06', 'claimed'), tk('07', 'needs-info'), tk('08', 'wontfix'), tk('09', 'ready-for-agent'), tk('10', 'ready-for-human'), tk('11', 'odd')];
+  assert.deepEqual(listGroups(tickets).map(g => g.status),
+    ['ready-for-review', 'needs-info', 'ready-for-human', 'claimed', 'ready-for-agent', 'needs-triage', 'resolved', 'wontfix', 'blocked-upstream', 'odd', '']);
+  assert.deepEqual(listGroups([tk('01', 'claimed')]).map(g => g.status), ['claimed']);
+  assert.deepEqual(listGroups([]), []);
+});
+
+test('a list group sorts its tickets by number', () => {
+  const tk = (number, feature = 'a') => ({ number, feature, status: 'claimed' });
+  const [g] = listGroups([tk('10'), tk('02'), tk(null), tk('02', 'b'), tk('9')]);
+  assert.deepEqual(g.tickets.map(t => `${t.number}${t.feature}`), ['02a', '02b', '9a', '10a', 'nulla']);
+});
+
+test('a list row second line: blocked, comments, needs you, conflicts and processes, joined with " · "', () => {
+  const t = { status: 'claimed', blocked: true, openBlockers: ['08', '09'], comments: 2, needsYou: true };
+  const a = { conflict: { files: ['x'] }, processes: [{}, {}] };
+  assert.equal(listNote(t, a), 'blocked by #08, #09 · 2 comments · ⚠ needs you · ⚔ conflicts · ⚙ 2 processes');
+  assert.equal(listNote({ status: 'claimed', openBlockers: [], comments: 1 }, { merging: { unresolved: 1 }, processes: [{}] }), '1 comment · ⚔ conflicts · ⚙ 1 process');
+  assert.equal(listNote({ status: 'claimed', openBlockers: [], comments: 0 }, null), '');
+  assert.equal(listNote({ status: 'resolved', openBlockers: [], comments: 0, needsYou: true }, null), '', 'finished tickets never say ⚠');
+});
+
+test('collapsed list groups: resolved and wontfix until you change it, then what you saved', () => {
+  assert.deepEqual(readCollapsedGroups(undefined), ['resolved', 'wontfix']);
+  assert.deepEqual(readCollapsedGroups('resolved'), ['resolved', 'wontfix']);
+  assert.deepEqual(readCollapsedGroups([]), []);
+  assert.deepEqual(readCollapsedGroups(['claimed', 3, '']), ['claimed', '']);
+  assert.deepEqual(readPrefs({}).collapsedGroups, ['resolved', 'wontfix']);
+  assert.deepEqual(readPrefs({ collapsedGroups: ['claimed'] }).collapsedGroups, ['claimed']);
 });
