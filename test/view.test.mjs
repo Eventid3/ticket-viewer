@@ -291,7 +291,6 @@ test('an unindented line right below a report bullet continues it', () => {
 
 const { listGroups, listNote, readCollapsedGroups } = globalThis.TicketView;
 
-
 test('list groups come in attention order, then other statuses, then no status; empty groups are left out', () => {
   const tk = (number, status) => ({ number, status });
   const tickets = [tk('01', 'resolved'), tk('02', 'needs-triage'), tk('03', 'blocked-upstream'), tk('04', ''), tk('05', 'ready-for-review'),

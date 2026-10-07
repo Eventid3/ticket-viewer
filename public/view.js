@@ -10,7 +10,7 @@
     { value: 'strip', label: 'Strip', title: 'Lanes on top, detail below' },
     { value: 'list', label: 'List', title: 'Grouped list with detail' },
   ];
-  // The List layout's groups, most in need of attention first. Other statuses follow, then "no status".
+  // The List layout's groups, most in need of attention first: the statuses with a colour (KNOWN_COLORS in app.js), reordered. Other statuses follow, then "no status".
   const ATTENTION = ['ready-for-review', 'needs-info', 'ready-for-human', 'claimed', 'ready-for-agent', 'needs-triage', 'resolved', 'wontfix'];
   // The List groups collapsed until you open them.
   const COLLAPSED_GROUPS = ['resolved', 'wontfix'];
@@ -31,6 +31,9 @@
     };
   }
 
+  // "1 comment", "2 comments", "2 processes".
+  function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
+
   // The List layout's groups: `{status, tickets}` in attention order, other statuses in the order first met, then no
   // status (''). Groups without tickets are left out; each group's tickets are sorted by number (numbered ones first).
   function listGroups(tickets) {
@@ -45,13 +48,12 @@
 
   // A List row's second line for ticket `t` and its agent `a`: what's worth saying, joined with " · " ('' for nothing).
   function listNote(t, a) {
-    const n = (count, word) => `${count} ${count === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`;
     return [
       t.blocked && `blocked by ${t.openBlockers.map(b => `#${b}`).join(', ')}`,
-      t.comments && n(t.comments, 'comment'),
-      !DONE.has(t.status) && t.needsYou && '⚠ needs you',
+      t.comments && plural(t.comments, 'comment'),
+      rowMarks(t, a).needsYou && '⚠ needs you',
       (a?.conflict || a?.merging) && '⚔ conflicts',
-      a?.processes?.length && `⚙ ${n(a.processes.length, 'process')}`,
+      a?.processes?.length && `⚙ ${plural(a.processes.length, 'process')}`,
     ].filter(Boolean).join(' · ');
   }
 
@@ -224,5 +226,5 @@
     };
   }
 
-  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, readCollapsedGroups, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage };
+  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, readCollapsedGroups, plural, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage };
 })();

@@ -5,7 +5,7 @@ const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 
-const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage } = TicketView;
+const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, plural, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage } = TicketView;
 const $ = id => document.getElementById(id);
 // layout: board, strip or list (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 // collapsedGroups: the List layout's closed groups, by status.
@@ -520,27 +520,40 @@ function cardAttrs(t, cls) {
 
 // The Strip layout's one-line card: number, title, the agent's mark and the criteria progress.
 function renderRowCard(t) {
-  const { running, done, needsYou } = rowMarks(t, agentOf(t));
+  const a = agentOf(t);
   return el('div', { ...cardAttrs(t, 'row-card'), title: t.title },
     el('span', { class: 'card-num' }, label(t)),
     el('span', { class: 'row-title' }, t.title),
-    running ? el('span', { class: 'run-dot', title: 'Agent running' }) : null,
-    done ? el('span', { class: 'row-done', title: 'Agent done' }, '✓') : null,
-    needsYou ? el('span', { class: 'row-needs-you', title: 'The agent needs you' }, '⚠') : null,
-    t.checks.total ? el('span', { class: 'row-progress', title: `${t.checks.done} of ${t.checks.total} criteria checked` }, `${t.checks.done}/${t.checks.total}`) : null);
+    rowAgentMark(t, a),
+    rowMarks(t, a).needsYou ? el('span', { class: 'row-needs-you', title: 'The agent needs you' }, '⚠') : null,
+    rowProgress(t));
+}
+
+// The Strip and List rows' agent mark: the running dot or ✓ (rowMarks in view.js).
+function rowAgentMark(t, a) {
+  const { running, done } = rowMarks(t, a);
+  return running ? el('span', { class: 'run-dot', title: 'Agent running' })
+    : done ? el('span', { class: 'row-done', title: 'Agent done' }, '✓') : null;
+}
+
+// The Strip and List rows' criteria progress, "n/m".
+function rowProgress(t) {
+  return t.checks.total ? el('span', { class: 'row-progress', title: `${t.checks.done} of ${t.checks.total} criteria checked` }, `${t.checks.done}/${t.checks.total}`) : null;
 }
 
 // A List layout group: a header button that opens or closes it, then a row per ticket while it's open.
+// A closed group still shows the selected ticket's row, so a ticket opened from the URL or another layout stays in view.
 function renderGroup({ status, tickets }) {
   const name = laneName(status);
   const open = !state.collapsedGroups.includes(status);
+  const rows = open ? tickets : tickets.filter(t => t.id === state.ticket);
   return el('section', { class: 'group', style: `--lane-color:${laneColor(status)}` },
     el('button', {
       class: 'group-head', type: 'button', 'aria-expanded': String(open), 'data-group-toggle': status, onclick: () => toggleGroup(status),
     },
       el('span', { class: 'chevron', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
       el('span', { class: 'dot' }), el('span', { class: 'lane-name' }, name), el('span', { class: 'count' }, tickets.length)),
-    open ? el('div', { class: 'group-rows' }, tickets.map(renderListRow)) : null);
+    rows.length ? el('div', { class: 'group-rows' }, rows.map(renderListRow)) : null);
 }
 
 // Opens or closes the List group `status`, and keeps keyboard focus on its header.
@@ -554,15 +567,12 @@ function toggleGroup(status) {
 
 // A List layout row: number, title, the agent's mark and the criteria progress, then a muted line of what else to know.
 function renderListRow(t) {
-  const { running, done } = rowMarks(t, agentOf(t));
-  const note = listNote(t, agentOf(t));
+  const a = agentOf(t);
+  const note = listNote(t, a);
   return el('div', cardAttrs(t, 'list-row'),
     el('span', { class: 'card-num' }, label(t)),
     el('span', { class: 'list-title' }, t.title),
-    el('span', { class: 'list-marks' },
-      running ? el('span', { class: 'run-dot', title: 'Agent running' }) : null,
-      done ? el('span', { class: 'row-done', title: 'Agent done' }, '✓') : null,
-      t.checks.total ? el('span', { class: 'row-progress', title: `${t.checks.done} of ${t.checks.total} criteria checked` }, `${t.checks.done}/${t.checks.total}`) : null),
+    el('span', { class: 'list-marks' }, rowAgentMark(t, a), rowProgress(t)),
     note ? el('span', { class: 'list-note' }, note) : null);
 }
 
@@ -598,7 +608,6 @@ function mergingMark(a) {
   return el('span', { class: 'mark warn', title: `Merging ${a.ref || 'a branch'} into ${a.branch} in the worktree: finish or abort it in the drawer` }, mergingText(a));
 }
 
-function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
 
 // The agent's state as coloured text next to the Agent section's heading.
 function agentStateLabel(a) {

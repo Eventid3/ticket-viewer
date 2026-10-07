@@ -93,9 +93,9 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 /* A card dragged over a lane that takes it. */
 .lane.drop, .lane-collapsed.drop { outline: 2px dashed var(--accent); outline-offset: 2px; }
 .lane-head { flex: none; display: flex; align-items: center; gap: 8px; height: 28px; padding: 2px 4px; font-size: 13px; font-weight: 600; }
-.lane-head .dot, .lane-collapsed .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--lane-color, var(--s-other)); }
+.lane-head .dot, .lane-collapsed .dot, .group-head .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--lane-color, var(--s-other)); }
 .lane-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lane-head .count { color: oklch(0.62 0.008 260); font: 500 12px var(--mono); font-variant-numeric: tabular-nums; }
+.lane-head .count, .group-head .count { color: oklch(0.62 0.008 260); font: 500 12px var(--mono); font-variant-numeric: tabular-nums; }
 .ghost-btn {
   margin-left: auto; height: 24px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent;
   color: oklch(0.62 0.008 260); font: inherit; font-size: 12px; font-weight: 400; cursor: pointer;
@@ -201,9 +201,8 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .group-head:hover { background: oklch(0.205 0.006 260); }
 .group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .group-head .chevron { flex: none; width: 12px; font-size: 11px; color: var(--muted); }
-.group-head .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--lane-color, var(--s-other)); }
-.group-head .count { color: oklch(0.62 0.008 260); font: 500 12px var(--mono); font-variant-numeric: tabular-nums; }
 .group-rows { display: flex; flex-direction: column; gap: 2px; padding: 0 6px 6px; }
+/* List rows keep their own hover and selected looks (the handoff's flat rows with a left bar), not the bordered cards'. */
 .list-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 4px 8px; align-items: baseline; padding: 9px 10px; border-radius: 7px; cursor: pointer; }
 .list-row:hover { background: oklch(0.215 0.006 260); }
 .list-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
