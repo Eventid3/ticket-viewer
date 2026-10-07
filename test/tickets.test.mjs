@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseTicket, parseSections, setStatus, appendComment, loadFeature, resolveFeatures, isFeatureCompleted } from '../lib/tickets.mjs';
+import { parseTicket, parseSections, setStatus, appendComment, toggleCriterion, loadFeature, resolveFeatures, isFeatureCompleted } from '../lib/tickets.mjs';
 
 const BOLD = `# 06: Build green on Umbraco 17
 
@@ -288,4 +288,22 @@ test('a fence only closes on a bare fence line', () => {
 test('the card progress counts the acceptance criteria the panel shows', () => {
   const t = parseTicket('# Q\n\n- [x] a\n\n## Notes\n\n```\n- [ ] in code\n```\n\n## Comments\n\n- [ ] in a comment\n', '01-q.md');
   assert.deepEqual(t.checks, { done: 1, total: 1 });
+});
+
+test('toggleCriterion flips the indexed criterion, counting as the card progress does', () => {
+  const md = '# 01: A\n\n**What to build:** x\n\n- [ ] One\n\n## Acceptance criteria\r\n\r\n- [x] Two\r\n  * [ ] Three\r\n\n## Out of scope\n\n- [ ] Not a criterion\n';
+  assert.deepEqual(parseTicket(md, '01-a.md').checks, { done: 1, total: 3 });
+  const ticked = toggleCriterion(md, 0, { text: 'One', done: false });
+  assert.equal(ticked, md.replace('- [ ] One', '- [x] One'));
+  assert.equal(toggleCriterion(md, 1, { text: 'Two', done: true }), md.replace('- [x] Two', '- [ ] Two'));
+  assert.equal(toggleCriterion(md, 2, { text: 'Three', done: false }), md.replace('* [ ] Three', '* [x] Three'));
+  assert.deepEqual(parseTicket(ticked, '01-a.md').checks, { done: 2, total: 3 });
+});
+
+test('toggleCriterion refuses when the criterion at that index changed text or state, or is gone', () => {
+  const md = '# 01: A\n\n- [ ] One\n- [x] Two\n';
+  assert.throws(() => toggleCriterion(md, 0, { text: 'Two', done: true }), /changed/);
+  assert.throws(() => toggleCriterion(md, 1, { text: 'Two', done: false }), /already ticked/);
+  assert.throws(() => toggleCriterion(md, 0, { text: 'One', done: true }), /already unticked/);
+  assert.throws(() => toggleCriterion(md, 2, { text: 'Three', done: false }), /no criterion 3/i);
 });

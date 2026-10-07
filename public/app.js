@@ -142,6 +142,27 @@ async function moveTicket(t, to, notes) {
   return result;
 }
 
+// Ticks or unticks acceptance criterion `index` of ticket `t` in its file. The page flips it straight away and the
+// file watcher's reload confirms it; if the file changed under the page, the server refuses and the reload shows the file.
+// One at a time, so a quick second click can't overtake the first and be refused against a state the page made up.
+async function toggleCriterion(t, index, item) {
+  if (toggleCriterion.busy) return;
+  toggleCriterion.busy = true;
+  const expected = { text: item.text, done: item.done };
+  item.done = !item.done;
+  t.checks = { ...t.checks, done: t.checks.done + (item.done ? 1 : -1) };
+  render();
+  try {
+    const result = await request('/api/criterion', { id: t.id, index, ...expected });
+    if (result.error) throw new Error(result.error);
+  } catch (e) {
+    toast(`Not ${expected.done ? 'unticked' : 'ticked'}: ${e.message}`);
+    load();
+  } finally {
+    toggleCriterion.busy = false;
+  }
+}
+
 const stoppedText = n => `Stopped ${plural(n, 'worktree process')}`;
 const stoppedNote = result => result.stopped ? ` · ${stoppedText(result.stopped)}` : '';
 
@@ -454,7 +475,7 @@ function renderCard(t) {
     ondragstart: e => { state.dragging = t; e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); },
     ondragend: () => { state.dragging = null; card.classList.remove('dragging'); },
     onclick: () => openTicket(t.id),
-    onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(t.id); } },
+    onkeydown: onActivate(() => openTicket(t.id)),
   },
     el('div', { class: 'card-top' },
       el('span', { class: 'card-num' }, label(t)),
@@ -547,7 +568,10 @@ function keepDrawerView(draw) {
   const drawer = $('drawer');
   if (state.ticket && drawer.dataset.ticket === state.ticket) saveView(drawer);
   else drawerView = { open: {}, scroll: {} };
+  // The focused control (by its data-focus key) gets focus back once it's redrawn, so the keyboard keeps its place.
+  const focused = drawer.contains(document.activeElement) ? document.activeElement.dataset.focus : null;
   draw();
+  if (focused) drawer.querySelector(`[data-focus="${focused}"]`)?.focus();
   if (drawer.hidden) { delete drawer.dataset.ticket; return; }
   restoreView(drawer);
   drawer.dataset.ticket = state.ticket;
@@ -626,7 +650,7 @@ function renderTicket(t) {
     t.blockedBy.length || t.blocks.length ? el('div', { class: 'links-row' },
       t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
       t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null,
-    t.sections.map(renderSection));
+    t.sections.map(s => renderSection(t, s)));
 }
 
 // A div of class `cls` with `md` rendered as markdown; null without markdown.
@@ -637,7 +661,7 @@ function markdownDiv(cls, md) {
   return div;
 }
 
-function renderSection(s) {
+function renderSection(t, s) {
   const markdownBlock = (md, cls = '') => markdownDiv(`ticket-text ${cls}`, md);
   const inlineMarkdown = (tag, attrs, md) => { const n = el(tag, attrs); n.innerHTML = inline(md); return n; };
   const head = s.label ? el('div', { class: 'ticket-label' }, s.label) : null;
@@ -648,8 +672,13 @@ function renderSection(s) {
         head,
         el('span', { class: 'progress' }, el('span', { style: `width:${Math.round(100 * done / s.items.length)}%` })),
         el('span', { class: 'progress-label' }, `${done}/${s.items.length}`)) : head,
-      s.items.map(i => el('div', { class: 'criterion' + (i.done ? ' done' : '') },
-        el('span', { class: 'checkbox', role: 'checkbox', 'aria-checked': String(i.done), 'aria-label': i.text }, i.done ? '✓' : ''),
+      s.items.map((i, n) => el('div', {
+        class: 'criterion' + (i.done ? ' done' : ''), role: 'checkbox', tabindex: '0', 'aria-checked': String(i.done),
+        'data-focus': `criterion-${n}`, title: i.done ? 'Untick' : 'Tick',
+        onclick: () => toggleCriterion(t, n, i),
+        onkeydown: onActivate(() => toggleCriterion(t, n, i)),
+      },
+        el('span', { class: 'checkbox', 'aria-hidden': 'true' }, i.done ? '✓' : ''),
         inlineMarkdown('span', { class: 'criterion-text' }, i.text))),
       markdownBlock(s.body));
   }
@@ -912,6 +941,9 @@ function renderStructure(t, notes) {
         disabled: !s.notes.length, title: s.notes.length ? 'Add the flagged items to the review notes below' : 'Flag items in the structure diff to get notes here',
       }, copyNotes)) : null);
 }
+
+// A keydown handler that runs `fn` on Enter or Space, as a click would.
+function onActivate(fn) { return e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } }; }
 
 function btn(text, attrs, onclick) { return el('button', { class: 'btn', ...attrs, onclick }, text); }
 // A ticket action's button attributes: disabled when refused, with the reason as its tooltip.
