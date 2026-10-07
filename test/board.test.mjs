@@ -227,6 +227,25 @@ test('agents work per project, and one finishing in another project moves its ti
   assert.equal(status(shop), 'claimed');
 });
 
+test('sending a ticket in review back with notes adds them to ## Comments, resumes the session with them and keeps them on the agent record', async t => {
+  let shop;
+  const s = await setup({ projects: [r => (shop = makeRepo(r, 'shop', { gitRepo: true }))] });
+  t.after(() => s.board.close());
+  const id = 'feat/01-a.md';
+  assert.equal((await s.post('/api/agent/start', { project: 'shop', id })).status, 200);
+  commit(s.cli.calls[0].cwd, 'work');
+  s.cli.set('bg1', { status: 'idle' });
+  await s.board.pollAll();
+  assert.equal(status(shop), 'ready-for-review');
+
+  assert.equal((await s.post('/api/move', { project: 'shop', id, to: 'claimed', notes: 'Rename the flag' })).status, 200);
+  assert.equal(status(shop), 'claimed');
+  assert.match(fs.readFileSync(path.join(shop, '.scratch', 'feat', 'issues', id.split('/')[1]), 'utf8'), /## Comments[\s\S]*Rename the flag/);
+  assert.deepEqual(s.cli.calls[1].args.slice(0, 2), ['--resume', 'session-bg1']);
+  assert.match(s.cli.calls[1].args[2], /^Review feedback on your work[\s\S]*Rename the flag/);
+  assert.equal((await s.get(`/api/agent?project=shop&id=${encodeURIComponent(id)}`)).body.record.reviewNotes, 'Rename the flag');
+});
+
 test('the project list counts each available project\'s tickets to review and agents that need you', async t => {
   let blog;
   const s = await setup({ projects: [r => makeRepo(r, 'shop', { status: 'needs-triage', gitRepo: true }), r => (blog = makeRepo(r, 'blog', { status: 'ready-for-review', gitRepo: true }))] });

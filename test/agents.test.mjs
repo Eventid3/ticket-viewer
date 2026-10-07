@@ -118,6 +118,20 @@ test('resume continues the same conversation in the same worktree', async () => 
   assert.equal(r.state, 'running');
 });
 
+test('resuming with review notes keeps them on the record until a fresh start', async () => {
+  const { agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  await agents.poll();
+  assert.equal(agents.get(ID).reviewNotes, null);
+  await agents.resume(ID, ticket, 'Review feedback: rename it', { reviewNotes: 'Rename it' });
+  assert.equal(agents.get(ID).reviewNotes, 'Rename it');
+  await agents.poll();
+  await agents.resume(ID, ticket, 'Continue');
+  assert.equal(agents.get(ID).reviewNotes, 'Rename it', 'a resume without notes keeps the last ones');
+  await agents.start(ID, ticket);
+  assert.equal(agents.get(ID).reviewNotes, null, 'a new session starts without review notes');
+});
+
 test('a session that disappears or is stopped shows as stopped; a failed start is reported', async () => {
   const { cli, agents, ticket } = setup();
   await agents.start(ID, ticket);

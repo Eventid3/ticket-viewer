@@ -6,7 +6,7 @@ const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
-const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions } = TicketView;
+const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentBox } = TicketView;
 const $ = id => document.getElementById(id);
 // emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
@@ -507,17 +507,17 @@ function mergingMark(a) {
 
 function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith('s') ? 'es' : 's')}`; }
 
-// The agent's state as a filled badge, in the drawer.
-function agentBadge(a) {
-  const badge = (state, attrs, text) => el('span', { class: `badge agent-state ${state}`, ...attrs }, text);
+// The agent's state as coloured text next to the Agent section's heading.
+function agentStateLabel(a) {
+  const label = (state, attrs, ...text) => el('span', { class: `mark state-label ${state}`, ...attrs }, ...text);
   switch (a.state) {
-    case 'starting': return badge('running', {}, '● agent starting');
-    case 'running': return badge('running', { title: `Working on ${a.branch}` }, '● agent running');
-    case 'waiting': return badge('waiting', { title: `Attach to answer: ${attachCommand(a)}` }, `⚠ needs you: ${a.waitingFor}`);
-    case 'idle': return badge('idle', { title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 agent is waiting for a reply');
-    case 'done': return badge('done', { title: a.branch }, '✓ agent done');
-    case 'failed': return badge('failed', { title: a.error || '' }, '✕ agent failed to start');
-    default: return badge('stopped', { title: 'The session is not running; attaching reopens it' }, '■ agent stopped');
+    case 'starting': return label('running', {}, el('span', { class: 'run-dot' }), 'starting');
+    case 'running': return label('running', { title: `Working on ${a.branch}` }, el('span', { class: 'run-dot' }), 'running');
+    case 'waiting': return label('waiting', { title: `Attach to answer: ${attachCommand(a)}` }, `⚠ needs you: ${a.waitingFor}`);
+    case 'idle': return label('idle', { title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 waiting for a reply');
+    case 'done': return label('done', { title: a.branch }, '✓ done');
+    case 'failed': return label('failed', { title: a.error || '' }, '✕ failed to start');
+    default: return label('stopped', { title: 'The session is not running; attaching reopens it' }, '■ stopped');
   }
 }
 
@@ -734,70 +734,103 @@ function renderActions(t, a) {
     note ? el('span', { class: 'muted' }, note) : null);
 }
 
-// The Claude Code part of the drawer: start an agent, follow it, and review what it did.
+// The Agent section: what the agent did (its final message as a summary and report), its changes, and sending it back
+// with notes; or, without an agent, how to get one going (noAgentBox in view.js).
 function renderAgent() {
   const box = $('drawerAgent');
   const t = state.ticket && findTicket(state.ticket);
   const a = t && agentOf(t);
   const d = state.detail?.id === t?.id ? state.detail : null;
+  const empty = t && !a ? noAgentBox(t) : null;
   // Empty it too: the previous ticket's buttons (Stop agent) are bound to that ticket.
-  if (!t || !a) { box.hidden = true; box.replaceChildren(); return; }
+  if (!t || (!a && !empty)) { box.hidden = true; box.replaceChildren(); return; }
   box.hidden = false;
-  const { moves } = t.actions;
+  if (!a) return fill(box, el('div', { class: 'agent-title' }, el('h3', {}, agentHeading(null))), renderNoAgent(t, empty));
 
   // Loaded afresh each time the ticket comes (back) into review.
   if (!wantsStructure(t) && state.structure?.id === t.id) state.structure = null;
-  let review = null;
-  if (t.status === 'ready-for-review' && a) {
-    // Kept in state, so the board's live reloads don't wipe what you've written.
-    const notes = el('textarea', {
-      class: 'notes', rows: 3, placeholder: 'Review notes: sent to the agent\'s session and added to the ticket\'s ## Comments',
-      oninput: e => { state.notes[t.id] = e.target.value; },
-    });
-    notes.value = state.notes[t.id] || '';
-    const structure = wantsStructure(t);
-    if (structure && state.structure?.id !== t.id) loadStructure(t.id, true);
-    // The merge-base with the reference branch, once the detail has loaded.
-    const since = (d?.changes?.base || a.base).slice(0, 8);
-    review = el('div', { class: 'review' },
-      el('div', { class: 'agent-actions' },
-        structure ? btn(state.structure?.opening ? '⌗ Opening structure diff…' : '⌗ Open structure diff', {
-          class: 'btn primary', disabled: !!state.structure?.opening,
-          title: `codemap view: the structural changes since ${since}, to mark OK or Flag`,
-        }, () => openStructureDiff(t)) : null,
-        btn('↩ Send back to agent', refused(moves.claimed, { title: 'Resume the agent\'s session with your notes' }), () => {
-          if (!notes.value.trim()) return toast('Write what should change first');
-          moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
-        })),
-      structure ? renderStructure(t, notes) : null,
-      notes);
-  }
-
-  const pending = a?.state === 'waiting' && d?.items.at(-1)?.kind === 'tool' ? d.items.at(-1).text : null;
-  const last = pending
-    ? el('div', { class: 'last-message', 'data-keep': 'pending' }, el('strong', {}, 'Waiting to run: '), el('code', {}, pending), el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`))
-    : d?.lastMessage && ['idle', 'done', 'stopped'].includes(a?.state)
-      ? el('div', { class: 'last-message markdown', 'data-keep': 'last-message', title: 'The agent\'s last message' }) : null;
-  if (last && !pending) last.innerHTML = renderMarkdown(d.lastMessage);
+  const pending = a.state === 'waiting' && d?.items.at(-1)?.kind === 'tool' ? d.items.at(-1).text : null;
+  const final = d?.lastMessage && ['idle', 'done', 'stopped'].includes(a.state) ? d.lastMessage : null;
   const changes = d?.changes;
   fill(box,
+    el('div', { class: 'agent-title' },
+      el('h3', {}, agentHeading(a)),
+      agentStateLabel(a)),
     el('div', { class: 'agent-head' },
-      el('strong', {}, 'Claude Code'),
-      agentBadge(a),
       badgeButton(el('code', {}, a.branch), a.branch, 'branch'),
-      a?.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
-      a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
-    last,
+      a.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
+      a.error ? el('span', { class: 'badge blocked' }, a.error) : null),
+    pending ? el('div', { class: 'pending', 'data-keep': 'pending' },
+      el('div', { class: 'pending-label' }, 'Waiting to run'),
+      el('code', {}, pending),
+      el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`)) : null,
+    final ? renderReport(final, a.reviewNotes) : null,
     renderMerge(t, a),
-    review,
-    a?.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
+    a.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
-      el('summary', {}, `${changes.commits.length} commit${changes.commits.length === 1 ? '' : 's'}${changes.dirty ? ' · uncommitted changes' : ''}`),
+      el('summary', {}, `${plural(changes.commits.length, 'commit')}${changes.dirty ? ' · uncommitted changes' : ''}`),
       changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
       changes.stat ? el('pre', {}, changes.stat) : null) : null,
-    d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: !!a?.busy },
-      el('summary', {}, 'Agent activity'),
+    t.status === 'ready-for-review' ? renderSendBack(t, a, d) : null,
+    d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: !!a.busy },
+      el('summary', {}, `Agent activity · ${plural(d.items.length, 'step')}`),
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
+}
+
+// A ticket without an agent: why, and the one thing to do about it.
+function renderNoAgent(t, { text, action, blocked }) {
+  const { start } = t.actions;
+  const button = action === 'triage'
+    ? btn('Copy /triage', { class: 'btn primary', title: `Copy "${triageCommand(t)}"` }, () => copy(triageCommand(t), '/triage command'))
+    : start ? btn(start.resume ? '▶ Continue agent' : '▶ Start agent', refused(start, { class: 'btn primary', title: 'Claim the ticket and run /implement as a background session' }), () => moveTicket(t, 'claimed'))
+    : null;
+  return el('div', { class: 'no-agent' },
+    el('p', {}, text),
+    blocked ? el('p', { class: 'blocked-note' }, blocked) : null,
+    button ? el('div', { class: 'agent-actions' }, button) : null);
+}
+
+// The agent's final message: its prose as the summary, its `- **Label:** text` bullets as report rows (splitReport in
+// view.js), then the review notes it was last sent back with, and anything else it wrote. Without such bullets, the whole message.
+function renderReport(message, reviewNotes) {
+  const markdown = (cls, md) => { const n = el('div', { class: `markdown ${cls}` }); n.innerHTML = renderMarkdown(md); return n; };
+  const { summary, items, rest } = splitReport(message);
+  const rows = [...items, ...(reviewNotes ? [{ label: 'Review', text: reviewNotes }] : [])];
+  return el('div', { class: 'report', 'data-keep': 'report', title: 'The agent\'s last message' },
+    summary ? markdown('agent-summary', summary) : null,
+    rows.length ? el('div', { class: 'report-items' },
+      rows.flatMap(r => [el('div', { class: 'report-label' }, r.label), markdown('report-value', r.text)])) : null,
+    rest ? markdown('agent-summary rest', rest) : null);
+}
+
+// Sending a ticket in review back to its agent, with notes; codemap's structure diff fills them with its flagged notes.
+function renderSendBack(t, a, d) {
+  // Kept in state, so the board's live reloads don't wipe what you've written.
+  const notes = el('textarea', {
+    id: 'sendBackNotes', class: 'notes', rows: 3, placeholder: 'Notes go to the agent\'s session and are added to the ticket\'s ## Comments',
+    oninput: e => { state.notes[t.id] = e.target.value; },
+  });
+  notes.value = state.notes[t.id] || '';
+  const structure = wantsStructure(t);
+  if (structure && state.structure?.id !== t.id) loadStructure(t.id, true);
+  // The merge-base with the reference branch, once the detail has loaded.
+  const since = (d?.changes?.base || a.base).slice(0, 8);
+  return el('div', { class: 'review' },
+    structure ? el('div', { class: 'agent-actions' },
+      btn(state.structure?.opening ? '⌗ Opening structure diff…' : '⌗ Open structure diff', {
+        disabled: !!state.structure?.opening,
+        title: `codemap view: the structural changes since ${since}, to mark OK or Flag`,
+      }, () => openStructureDiff(t))) : null,
+    structure ? renderStructure(t, notes) : null,
+    el('div', { class: 'send-back' },
+      el('label', { class: 'send-back-label', for: 'sendBackNotes' }, 'Send back with notes'),
+      notes,
+      el('div', { class: 'send-back-row' },
+        btn('↩ Send back to agent', refused(t.actions.moves.claimed, { title: 'Resume the agent\'s session with your notes' }), () => {
+          if (!notes.value.trim()) return toast('Add review notes first');
+          moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
+        }),
+        el('span', { class: 'muted' }, 'The agent resumes on the same branch.'))));
 }
 
 // Where the ticket's work will be merged, and the files a test merge into it conflicts in;
