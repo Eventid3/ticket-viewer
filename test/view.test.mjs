@@ -323,3 +323,16 @@ test('the Agent heading meta: finished time and run length when done, a live cou
   assert.deepEqual(agentMeta({ state: 'done' }, { startedAt: at(14, 22), lastAt: at(14, 21) }, now), { text: 'Finished 14:21' },
     'no run length when the last item is from an earlier run');
 });
+
+const { changeBars } = globalThis.TicketView;
+
+test('change bars scale to the largest file, split green/red by its added and deleted lines', () => {
+  const files = [{ path: 'a', added: 30, deleted: 10 }, { path: 'b', added: 5, deleted: 5 }, { path: 'c', added: 0, deleted: 0 }];
+  assert.deepEqual(changeBars(files), [{ added: 37.5, deleted: 12.5 }, { added: 6.25, deleted: 6.25 }, { added: 0, deleted: 0 }]);
+});
+
+test('binary files get an empty bar and leave the scale alone; no counts at all leaves every bar empty', () => {
+  assert.deepEqual(changeBars([{ path: 'x.png', added: null, deleted: null }, { path: 'a', added: 0, deleted: 4 }]),
+    [{ added: 0, deleted: 0 }, { added: 0, deleted: 50 }]);
+  assert.deepEqual(changeBars([{ path: 'x.png', added: null, deleted: null }]), [{ added: 0, deleted: 0 }]);
+});

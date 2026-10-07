@@ -238,5 +238,13 @@
     };
   }
 
-  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, hhmm, clockTime, duration, runningFor, agentMeta };
+  // The Changes block's 50px bar per file, as the widths of its green (added) and red (deleted) parts: the largest
+  // file fills the bar. Binary files (null counts) get an empty bar.
+  function changeBars(files, width = 50) {
+    const total = f => (f.added ?? 0) + (f.deleted ?? 0);
+    const max = Math.max(0, ...files.map(total));
+    return files.map(f => max ? { added: (f.added ?? 0) / max * width, deleted: (f.deleted ?? 0) / max * width } : { added: 0, deleted: 0 });
+  }
+
+  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, changeBars, hhmm, clockTime, duration, runningFor, agentMeta };
 })();
