@@ -24,6 +24,8 @@ const cases = [
   ['start doesn\'t apply in review', ticket('ready-for-review'), agent('done'), git, 'start', /not ready-for-agent/],
   ['send back from review', ticket('ready-for-review'), agent('done'), git, 'moves.claimed', null],
   ['approve', ticket('ready-for-review'), agent('done'), git, 'moves.resolved', null],
+  ['mark a ready-for-human ticket resolved', ticket('ready-for-human'), null, git, 'moves.resolved', null],
+  ['…also outside a git repository', ticket('ready-for-human'), null, { agents: false }, 'moves.resolved', null],
   ['a move the board doesn\'t make', ticket('ready-for-review'), agent('done'), git, 'moves.wontfix', /use \/triage/],
   ['stop a running agent', ticket('claimed'), agent('running'), git, 'stop', null],
   ['nothing to stop', ticket('claimed'), agent('stopped'), git, 'stop', /No agent session/],

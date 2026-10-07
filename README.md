@@ -55,7 +55,7 @@ The board can run Claude Code for you, as Claude Code background sessions (`clau
    - **💬 waiting for a reply**: the agent ended its turn without committing, so it probably asked you something.
    - **■ agent stopped**
 
-   **Copy attach** (also the ⧉ button on a claimed card) copies `claude attach <id>`. Run it in a terminal to watch the session, answer prompts, or reply. The session keeps running when you leave it (← or Ctrl+Z).
+   **Copy attach command** (also the ⧉ button on a claimed card) copies `claude attach <id>`. Run it in a terminal to watch the session, answer prompts, or reply. The session keeps running when you leave it (← or Ctrl+Z).
 3. **Review**: when the agent ends its turn with new commits, the ticket moves to **ready-for-review**. There:
    - **Open diff in meld** runs `git difftool --dir-diff --tool=meld <review base>` in the worktree, so you see everything the ticket changed, including uncommitted work. The review base is `git merge-base <reference branch> HEAD` (see [Merge conflicts](#merge-conflicts)), so merging the reference branch into the ticket's branch doesn't fill the review with other tickets' work. The panel also lists the commits and a diff stat, and shows the agent's last message.
    - **Open structure diff** (only when [codemap](#structure-diff-codemap) is installed) opens codemap's review list of structural changes since the same review base.
@@ -135,18 +135,19 @@ The board changes a ticket's `Status:` line only for these moves:
 - claimed → ready-for-review (the agent committed and ended its turn)
 - claimed → ready-for-agent (only while no agent is working)
 - ready-for-review → resolved, claimed (send back to the agent) or ready-for-agent
+- ready-for-human → resolved (**Mark resolved**, once you've done the work)
 
 Cards can only be dragged to those lanes. Every other change, such as triage decisions, goes through `/triage`, so the skill that owns the transition makes it. For example, `/triage` writes the agent brief when it moves a ticket to ready-for-agent. The board picks up file changes live.
 
 ## Copying commands
 
 - The ⧉ button on a card (shows on hover) copies the next step: `/triage <path>` for tickets with no status, `needs-triage` or `needs-info`, and `/implement <path>` for `ready-for-agent`.
-- The detail panel has **Copy /implement**, **Copy /triage**, and a **Move via /triage…** menu that copies `/triage move <path> to <state>`.
+- The detail panel's **Commands ▾** menu has **Copy /implement**, **Copy /triage**, **Copy issue path** (the absolute path), **Copy worktree path** (when the ticket has a worktree), and under **Move via /triage** every status: picking one copies `/triage move <path> to <state>`, so the agent makes the move. Escape closes the menu, then the panel.
 - Press `c` while a ticket is open to copy its next step (`/implement` when there is none).
 
 Paths in these commands are relative to the project's repo root (the folder that contains `.scratch/`). Start the agent there.
 
-Under the ticket title, the detail panel has up to three rows: the tickets it's blocked by and blocks, the copy commands above, and the ticket's path. The path is shown relative to the repo root, but clicking it copies the absolute path. When the ticket has an agent, **Copy worktree** next to it copies `cd <absolute worktree path>`, for jumping into the worktree from a terminal. The branch name in the Claude Code section copies the branch.
+The detail panel's header stays at the top while the panel scrolls. Under the title it shows the tickets this one is blocked by and blocks, then only the actions for the ticket's current state: Approve and Open diff in meld in review, Stop agent and Copy attach command while the agent runs, Continue agent and Back to ready-for-agent once it stopped, Start agent and Copy /implement in ready-for-agent, Copy /triage before that, Mark resolved in ready-for-human, and none once resolved. When the agent needs you, Copy attach command is the primary action. ⚔ Resolve conflicts and ⇆ Resolve in meld join them when they apply. A refused action is disabled, with the reason as its tooltip. The branch name in the Claude Code section copies the branch.
 
 ## Parsing rules
 

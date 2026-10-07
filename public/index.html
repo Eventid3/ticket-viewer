@@ -30,16 +30,24 @@
   <main id="board" class="board"></main>
 
   <aside id="drawer" class="drawer" data-keep="drawer" hidden>
-    <div class="drawer-head">
-      <div>
-        <div id="drawerMeta" class="drawer-meta"></div>
-        <h2 id="drawerTitle"></h2>
+    <header class="detail-head">
+      <div class="detail-meta">
+        <span id="drawerMeta" class="meta-items"></span>
+        <span class="spacer"></span>
+        <div id="commands" class="commands">
+          <button id="commandsBtn" class="btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="commandsMenu">Commands ▾</button>
+          <div id="commandsMenu" class="commands-menu" role="menu" aria-labelledby="commandsBtn" hidden></div>
+        </div>
+        <button id="drawerClose" class="btn icon" type="button" aria-label="Close" title="Close (Escape)">✕</button>
       </div>
-      <button id="drawerClose" class="icon-btn" aria-label="Close">✕</button>
+      <h2 id="drawerTitle" class="detail-title"></h2>
+      <div id="drawerLinks" class="drawer-links"></div>
+      <div id="drawerActions" class="detail-actions" role="group" aria-label="Actions"></div>
+    </header>
+    <div class="detail-body">
+      <section id="drawerAgent" class="agent" hidden></section>
+      <article id="drawerBody" class="markdown"></article>
     </div>
-    <div id="drawerLinks" class="drawer-links"></div>
-    <section id="drawerAgent" class="agent" hidden></section>
-    <article id="drawerBody" class="markdown"></article>
   </aside>
   <div id="toast" class="toast" hidden></div>
 

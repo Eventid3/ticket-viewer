@@ -24,5 +24,40 @@
     };
   }
 
-  globalThis.TicketView = { EMPTY_LANES, matchesQuery, readPrefs, liveCounts };
+  // The detail header's primary actions: only the ones for the ticket's current state, each `{name, style}`
+  // with style default, primary, green or stop. A button whose server ticket action (t.actions) is left out isn't shown;
+  // app.js disables a refused one with the server's reason. `note` is the muted text shown instead of buttons.
+  function headerActions(t, a) {
+    const { start, stop, resolveConflicts, mergeByHand, moves } = t.actions;
+    const busy = ['starting', 'running', 'waiting'].includes(a?.state);
+    const buttons = [];
+    const add = (name, style = 'default', when = true) => { if (when) buttons.push({ name, style }); };
+    if (t.status === 'resolved') return { buttons, note: 'Resolved' };
+    if (t.status === 'ready-for-review' && a) {
+      add('approve', 'green', !!moves.resolved);
+      add('diff');
+    } else if (t.status === 'claimed' && t.needsYou) {
+      add('attach', 'primary', !!a?.bgId);
+      add('continue', 'default', !!start && !busy);
+      add('stop', 'stop', !!stop);
+    } else if (t.status === 'claimed' && busy) {
+      add('stop', 'stop', !!stop);
+      add('attach', 'default', !!a?.bgId);
+    } else if (t.status === 'claimed') {
+      add('continue', 'primary', !!start);
+      add('back', 'default', !!moves['ready-for-agent']);
+    } else if (t.status === 'ready-for-agent') {
+      add('start', 'primary', !!start);
+      add('implement');
+    } else if (!t.status || t.status === 'needs-info' || t.status === 'needs-triage') {
+      add('triage', 'primary');
+    } else if (t.status === 'ready-for-human') {
+      add('markResolved', 'primary', !!moves.resolved);
+    }
+    add('resolveConflicts', 'default', !!resolveConflicts);
+    add('mergeByHand', 'default', !!mergeByHand);
+    return { buttons, note: null };
+  }
+
+  globalThis.TicketView = { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, headerActions };
 })();

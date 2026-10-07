@@ -6,10 +6,10 @@ const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
-const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts } = TicketView;
+const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, headerActions } = TicketView;
 const $ = id => document.getElementById(id);
 // emptyLanes: show, collapse or hide the lanes with no tickets (collapse shows them until collapsed lanes exist).
-const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {} };
+const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
 
 // ---- state <-> URL hash / localStorage ------------------------------------------------
 function readHash() {
@@ -220,11 +220,8 @@ function laneList(tickets) {
 
 // ---- clipboard --------------------------------------------------------------------------
 // The board never writes tickets: status changes go through the agent skills, so it hands out commands.
-const TRIAGE_STATES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix'];
-
 function implementCommand(t) { return `/implement ${t.path}`; }
 function attachCommand(a) { return `claude attach ${a.bgId}`; }
-function worktreeCommand(a) { return `cd ${a.worktree}`; }
 function mergeCommand(a) { return `git merge ${a.branch} && git worktree remove ${a.worktree} && git branch -d ${a.branch}`; }
 function triageCommand(t, to) { return to ? `/triage move ${t.path} to ${to}` : `/triage ${t.path}`; }
 
@@ -487,6 +484,7 @@ function plural(n, word) { return `${n} ${n === 1 ? word : word + (word.endsWith
 
 function openTicket(id) {
   state.ticket = id;
+  state.commandsOpen = false;
   state.detail = null;
   state.structure = null;
   writeHash();
@@ -495,6 +493,7 @@ function openTicket(id) {
 }
 function closeTicket() {
   state.ticket = null;
+  state.commandsOpen = false;
   state.detail = null;
   state.structure = null;
   writeHash();
@@ -547,24 +546,19 @@ function restoreScroll(n) {
 function renderDrawer() {
   const drawer = $('drawer');
   const t = state.ticket && findTicket(state.ticket);
-  if (!t) { drawer.hidden = true; return; }
+  if (!t) { drawer.hidden = true; setCommandsOpen(false); return; }
   drawer.hidden = false;
-
-  // Picking a state copies a /triage command, so the agent makes the move (and writes the brief).
-  const moveSel = el('select', {
-    class: 'badge action', 'aria-label': 'Move via /triage',
-    onchange: e => { const to = e.target.value; e.target.value = ''; if (to) copy(triageCommand(t, to), '/triage command'); },
-  },
-    el('option', { value: '' }, 'Move via /triage… ▾'),
-    TRIAGE_STATES.filter(s => s !== t.status).map(s => el('option', { value: s }, `→ ${s}`)));
+  const a = agentOf(t);
 
   fill($('drawerMeta'),
-    el('span', { class: 'card-num' }, label(t)), el('span', {}, `· ${t.feature}`),
-    el('span', { class: 'badge status', style: `--lane-color:${laneColor(t.status)}` }, t.status || 'no status'),
-    t.type ? el('span', { class: 'badge' }, t.type) : null,
-    t.blocked ? el('span', { class: 'badge blocked' }, 'blocked') : null);
+    el('span', { class: 'meta-num' }, label(t)),
+    el('span', {}, t.feature),
+    el('span', { class: 'status-pill', style: `--lane-color:${laneColor(t.status)}` }, el('span', { class: 'dot' }), t.status || 'no status'),
+    t.type ? el('span', { class: 'type-chip' }, t.type) : null);
   $('drawerTitle').textContent = t.title;
+  renderCommands(t, a);
 
+  // Ticket 04 moves these into the Ticket section.
   const byNum = new Map(currentTickets().filter(o => o.feature === t.feature).map(o => [Number(o.number), o]));
   const link = n => {
     const o = byNum.get(Number(n));
@@ -574,21 +568,86 @@ function renderDrawer() {
       onclick: () => o && openTicket(o.id),
     }, `#${n}`);
   };
-  const a = agentOf(t);
   fill($('drawerLinks'),
     t.blockedBy.length || t.blocks.length ? el('div', { class: 'links-row' },
       t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
-      t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null,
-    el('div', { class: 'links-row action-group', role: 'group', 'aria-label': 'Commands' },
-      badgeButton('⧉ Copy /implement', implementCommand(t), '/implement command'),
-      badgeButton('⧉ Copy /triage', triageCommand(t), '/triage command'),
-      moveSel),
-    el('div', { class: 'links-row' },
-      badgeButton(el('code', {}, t.path), t.absPath, 'absolute path'),
-      a?.worktree ? badgeButton('⧉ Copy worktree', worktreeCommand(a), 'worktree command') : null));
+      t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null);
+  renderActions(t, a);
   renderAgent();
   $('drawerBody').innerHTML = renderMarkdown(t.body);
   document.querySelectorAll('.card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+}
+
+// The header's Commands menu: copy commands and paths, or a /triage move, so the agent makes the move (and writes the brief).
+function renderCommands(t, a) {
+  const item = (text, copyText, what, attrs = {}) => el('button', {
+    class: 'menu-item', role: 'menuitem', type: 'button', title: copyText ? `Copy "${copyText}"` : null, ...attrs,
+    onclick: () => { setCommandsOpen(false); if (copyText) copy(copyText, what); },
+  }, text);
+  fill($('commandsMenu'),
+    item('Copy /implement', implementCommand(t), '/implement command'),
+    item('Copy /triage', triageCommand(t), '/triage command'),
+    item('Copy issue path', t.absPath, 'issue path'),
+    a?.worktree ? item('Copy worktree path', a.worktree, 'worktree path') : null,
+    el('div', { class: 'menu-divider', role: 'separator' }),
+    el('div', { class: 'menu-label', id: 'moveLabel' }, 'Move via /triage'),
+    el('div', { role: 'group', 'aria-labelledby': 'moveLabel' },
+      KNOWN_COLORS.map(s => s === t.status
+        ? item([el('span', { class: 'dot', style: `--lane-color:${laneColor(s)}` }), s], null, null, { class: 'menu-item current', 'aria-current': 'true' })
+        : item([el('span', { class: 'dot', style: `--lane-color:${laneColor(s)}` }), s], triageCommand(t, s), '/triage command'))));
+  setCommandsOpen(state.commandsOpen);
+}
+
+function setCommandsOpen(open) {
+  state.commandsOpen = open;
+  $('commandsMenu').hidden = !open;
+  $('commandsBtn').setAttribute('aria-expanded', String(open));
+}
+
+// The header's primary actions: only those for the ticket's current state (headerActions in view.js), each wired to
+// the server's ticket action, which disables it with its reason when refused.
+function renderActions(t, a) {
+  const { start, stop, resolveConflicts, mergeByHand, moves } = t.actions;
+  const d = state.detail?.id === t.id ? state.detail : null;
+  const make = {
+    approve: () => ['✓ Approve', refused(moves.resolved, { title: `Mark resolved, stop the session and its worktree processes, and copy the command that merges ${a.branch} into ${a.ref || 'the branch you are on'}` }), async () => {
+      const conflict = a.conflict;
+      const result = await moveTicket(t, 'resolved');
+      if (!result) return;
+      // Copying shows its own toast, so repeat the stopped count and any merge conflict in it.
+      const warning = conflict ? ` · ⚔ it conflicts with ${a.ref} in ${plural(conflict.files.length, 'file')}` : '';
+      const copied = await copy(mergeCommand(a), 'merge command');
+      if (result.stopped || warning) toast(`${copied ? 'Copied merge command' : 'Could not copy merge command'}${warning}${stoppedNote(result)}`);
+    }],
+    // The merge-base with the reference branch, once the detail has loaded.
+    diff: () => ['Open diff in meld', { title: `git difftool -d ${(d?.changes?.base || a.base || '').slice(0, 8)} in the worktree` }, () => api('/api/agent/diff', { id: t.id })],
+    stop: () => ['■ Stop agent', refused(stop, { title: 'Stop the session; its conversation is kept' }), () => api('/api/agent/stop', { id: t.id })],
+    attach: () => ['Copy attach command', { title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')],
+    continue: () => ['↻ Continue agent', refused(start, { title: 'Resume the session in the background and tell it to carry on' }), () => api('/api/agent/start', { id: t.id })],
+    back: () => ['Back to ready-for-agent', refused(moves['ready-for-agent'], {}), () => moveTicket(t, 'ready-for-agent')],
+    start: () => [start.resume ? '▶ Continue agent' : '▶ Start agent', refused(start, { title: 'Claim the ticket and run /implement as a background session' }), () => moveTicket(t, 'claimed')],
+    implement: () => ['Copy /implement', { title: `Copy "${implementCommand(t)}"` }, () => copy(implementCommand(t), '/implement command')],
+    triage: () => ['Copy /triage', { title: `Copy "${triageCommand(t)}"` }, () => copy(triageCommand(t), '/triage command')],
+    markResolved: () => ['Mark resolved', refused(moves.resolved, { title: 'Move the ticket to resolved' }), () => moveTicket(t, 'resolved')],
+    resolveConflicts: () => ['⚔ Resolve conflicts', refused(resolveConflicts, {
+      title: `Move the ticket to claimed and have the agent merge ${a.ref} into ${a.branch} (merge, not rebase), resolve ${plural(a.conflict.files.length, 'file')}, run the tests and commit. Nothing is added to the ticket's ## Comments`,
+    }), async () => {
+      if (await api('/api/agent/resolve-conflicts', { id: t.id })) toast(`${label(t)}: agent is resolving the merge conflict · claude attach to watch`);
+    }],
+    mergeByHand: () => ['⇆ Resolve in meld', refused(mergeByHand, {
+      title: `git merge --no-edit ${a.ref} in the worktree, then git mergetool --tool=meld on the conflicts. Refused with uncommitted changes. The ticket stays in its lane`,
+    }), async () => {
+      const result = await api('/api/agent/merge', { id: t.id });
+      if (result) toast(result.clean ? `${label(t)}: merged ${a.ref} cleanly and committed` : `${label(t)}: ${plural(result.unresolved, 'file')} to resolve · opening meld`);
+    }],
+  };
+  const { buttons, note } = headerActions(t, a);
+  fill($('drawerActions'),
+    buttons.map(({ name, style }) => {
+      const [text, attrs, onclick] = make[name]();
+      return btn(text, { ...attrs, class: `btn lg${style === 'default' ? '' : ` ${style}`}` }, onclick);
+    }),
+    note ? el('span', { class: 'muted' }, note) : null);
 }
 
 // The Claude Code part of the drawer: start an agent, follow it, and review what it did.
@@ -598,40 +657,9 @@ function renderAgent() {
   const a = t && agentOf(t);
   const d = state.detail?.id === t?.id ? state.detail : null;
   // Empty it too: the previous ticket's buttons (Stop agent) are bound to that ticket.
-  if (!t || (!a && t.status !== 'ready-for-agent')) { box.hidden = true; box.replaceChildren(); return; }
+  if (!t || !a) { box.hidden = true; box.replaceChildren(); return; }
   box.hidden = false;
-
-  // Which buttons show, and which are disabled and why, are the server's ticket actions.
-  const { start, stop, resolveConflicts, mergeByHand, moves } = t.actions;
-  const actions = [];
-  if (start && t.status === 'ready-for-agent') {
-    actions.push(btn(start.resume ? '▶ Continue agent' : '▶ Start agent', refused(start, { class: 'btn primary', title: 'Claim the ticket and run /implement as a background session' }), () => moveTicket(t, 'claimed')));
-  }
-  // Start/Continue and meld are the next step in their lanes; otherwise attaching is, when the agent needs you.
-  if (a?.bgId) actions.push(btn('⧉ Copy attach', { class: `btn${t.needsYou ? ' primary' : ''}`, title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')));
-  if (stop) actions.push(btn('■ Stop agent', { title: 'Stop the session; its conversation is kept' }, () => api('/api/agent/stop', { id: t.id })));
-  if (resolveConflicts) {
-    actions.push(btn('⚔ Resolve conflicts', refused(resolveConflicts, {
-      class: 'btn primary',
-      title: `Move the ticket to claimed and have the agent merge ${a.ref} into ${a.branch} (merge, not rebase), resolve ${plural(a.conflict.files.length, 'file')}, run the tests and commit. Nothing is added to the ticket's ## Comments`,
-    }), async () => {
-      if (await api('/api/agent/resolve-conflicts', { id: t.id })) toast(`${label(t)}: agent is resolving the merge conflict · claude attach to watch`);
-    }));
-  }
-  if (mergeByHand) {
-    actions.push(btn('⇆ Resolve in meld', refused(mergeByHand, {
-      title: `git merge --no-edit ${a.ref} in the worktree, then git mergetool --tool=meld on the conflicts. Refused with uncommitted changes. The ticket stays in its lane`,
-    }), async () => {
-      const result = await api('/api/agent/merge', { id: t.id });
-      if (result) toast(result.clean ? `${label(t)}: merged ${a.ref} cleanly and committed` : `${label(t)}: ${plural(result.unresolved, 'file')} to resolve · opening meld`);
-    }));
-  }
-  if (start && t.status === 'claimed') {
-    actions.push(btn('↻ Continue agent', refused(start, { title: 'Resume the session in the background and tell it to carry on' }), () => api('/api/agent/start', { id: t.id })));
-  }
-  if (moves['ready-for-agent'] && t.status === 'claimed') {
-    actions.push(btn('Back to ready-for-agent', refused(moves['ready-for-agent'], {}), () => moveTicket(t, 'ready-for-agent')));
-  }
+  const { moves } = t.actions;
 
   // Loaded afresh each time the ticket comes (back) into review.
   if (!wantsStructure(t) && state.structure?.id === t.id) state.structure = null;
@@ -649,20 +677,10 @@ function renderAgent() {
     const since = (d?.changes?.base || a.base).slice(0, 8);
     review = el('div', { class: 'review' },
       el('div', { class: 'agent-actions' },
-        btn('⇆ Open diff in meld', { class: 'btn primary', title: `git difftool -d ${since} in the worktree` }, () => api('/api/agent/diff', { id: t.id })),
         structure ? btn(state.structure?.opening ? '⌗ Opening structure diff…' : '⌗ Open structure diff', {
           class: 'btn primary', disabled: !!state.structure?.opening,
           title: `codemap view: the structural changes since ${since}, to mark OK or Flag`,
         }, () => openStructureDiff(t)) : null,
-        btn('✓ Approve', refused(moves.resolved, { title: `Mark resolved, stop the session and its worktree processes, and copy the command that merges ${a.branch} into ${a.ref || 'the branch you are on'}` }), async () => {
-          const conflict = a.conflict;
-          const result = await moveTicket(t, 'resolved');
-          if (!result) return;
-          // Copying shows its own toast, so repeat the stopped count and any merge conflict in it.
-          const warning = conflict ? ` · ⚔ it conflicts with ${a.ref} in ${plural(conflict.files.length, 'file')}` : '';
-          const copied = await copy(mergeCommand(a), 'merge command');
-          if (result.stopped || warning) toast(`${copied ? 'Copied merge command' : 'Could not copy merge command'}${warning}${stoppedNote(result)}`);
-        }),
         btn('↩ Send back to agent', refused(moves.claimed, { title: 'Resume the agent\'s session with your notes' }), () => {
           if (!notes.value.trim()) return toast('Write what should change first');
           moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
@@ -681,13 +699,12 @@ function renderAgent() {
   fill(box,
     el('div', { class: 'agent-head' },
       el('strong', {}, 'Claude Code'),
-      a ? agentBadge(a) : el('span', { class: 'muted' }, 'no agent yet'),
-      a ? badgeButton(el('code', {}, a.branch), a.branch, 'branch') : null,
+      agentBadge(a),
+      badgeButton(el('code', {}, a.branch), a.branch, 'branch'),
       a?.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
       a?.error ? el('span', { class: 'badge blocked' }, a.error) : null),
-    actions.length ? el('div', { class: 'agent-actions' }, actions) : null,
     last,
-    a ? renderMerge(t, a) : null,
+    renderMerge(t, a),
     review,
     a?.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
@@ -973,11 +990,15 @@ $('feature').addEventListener('change', e => { state.feature = e.target.value; s
 $('search').addEventListener('input', e => { state.query = e.target.value; render(); });
 $('unblockedOnly').addEventListener('click', () => { state.unblockedOnly = !state.unblockedOnly; savePrefs(); renderToolbar(); render(); });
 $('drawerClose').addEventListener('click', closeTicket);
+$('commandsBtn').addEventListener('click', () => setCommandsOpen(!state.commandsOpen));
+document.addEventListener('click', e => { if (state.commandsOpen && !$('commands').contains(e.target)) setCommandsOpen(false); });
 // The drawer covers the board's right edge, where the browser would auto-scroll during a drag,
 // so dragging a card over the drawer scrolls the board on toward the lanes behind it.
 $('drawer').addEventListener('dragover', () => { if (state.dragging) $('board').scrollLeft += 20; });
 document.addEventListener('keydown', e => {
   if (projectsDialogOpen()) return; // the dialog has its own keys (Escape closes it)
+  // Escape closes the Commands menu first, then the panel.
+  if (e.key === 'Escape' && state.commandsOpen) { setCommandsOpen(false); $('commandsBtn').focus(); return; }
   if (e.key === 'Escape' && state.ticket) closeTicket();
   const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
   if (e.key === 'c' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
