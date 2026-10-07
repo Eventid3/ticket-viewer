@@ -42,6 +42,9 @@
       .replace(/\s+/g, ' ').trim();
   }
 
+  // Tickets that need triage before an agent can work on them: needs-triage, needs-info or no status.
+  const isTriage = t => !t.status || t.status === 'needs-triage' || t.status === 'needs-info';
+
   // The top bar's counts: agents running (or starting) and tickets waiting for review.
   function liveCounts(tickets, agents) {
     return {
@@ -78,7 +81,7 @@
     } else if (t.status === 'ready-for-agent') {
       add('start', 'primary', !!start);
       add('implement');
-    } else if (!t.status || t.status === 'needs-info' || t.status === 'needs-triage') {
+    } else if (isTriage(t)) {
       add('triage', 'primary');
     } else if (t.status === 'ready-for-human') {
       add('markResolved', 'primary', !!moves.resolved);
@@ -99,12 +102,13 @@
     const items = [];
     const rest = [];
     let start = -1;
-    let fence = null;
+    let fence = null; // the open fence's run of ` or ~
     let item = null; // the item indented lines are added to, with its indent
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const f = line.match(/^\s*(```|~~~)/);
-      if (fence) { if (line.trim() === fence) fence = null; }
+      const f = line.match(/^\s*(`{3,}|~{3,})/);
+      // A fence closes on a bare run of its character at least as long as the one that opened it.
+      if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !line.trim().slice(f[1].length)) fence = null; }
       else if (f) fence = f[1];
       const m = !fence && !f && line.match(report);
       if (m) {
@@ -114,14 +118,16 @@
         continue;
       }
       if (start === -1) continue;
-      // An indented line goes on the open item, even after a blank line; anything else ends it.
-      const indented = /^\s/.test(line) && line.trim();
-      if (item && (indented || (!line.trim() && /^\s+\S/.test(lines.slice(i + 1).find(l => l.trim()) || '')))) {
-        if (indented) item.lines.push(line.slice(Math.min(item.indent, line.length - line.trimStart().length)));
-        else item.lines.push('');
+      // An indented line goes on the open item, even after a blank line, and so does any line right below it
+      // that doesn't start a block of its own; anything else ends it.
+      const text = line.trim();
+      const indented = /^\s/.test(line) && text;
+      const lazy = item && text && lines[i - 1].trim() && !f && !/^([-*+]|\d+[.)]|#{1,6}|>)(\s|$)/.test(text);
+      if (item && (indented || lazy || (!text && /^\s+\S/.test(lines.slice(i + 1).find(l => l.trim()) || '')))) {
+        item.lines.push(lazy && !indented ? text : indented ? line.slice(Math.min(item.indent, line.length - line.trimStart().length)) : '');
         continue;
       }
-      if (line.trim()) item = null;
+      if (text) item = null;
       rest.push(line);
     }
     if (start === -1) return { summary: String(md || '').trim(), items: [], rest: '' };
@@ -146,8 +152,8 @@
 
   // The Agent section of ticket `t` without an agent: an explanation, one action (start or triage) and a warning when
   // it's blocked. Null leaves the section out (ready-for-human, resolved, wontfix, …).
-  function noAgentBox(t) {
-    const triage = !t.status || t.status === 'needs-triage' || t.status === 'needs-info';
+  function noAgentPrompt(t) {
+    const triage = isTriage(t);
     if (t.status !== 'ready-for-agent' && !triage) return null;
     const nums = t.openBlockers.map(n => `#${n}`);
     return {
@@ -155,11 +161,11 @@
         ? 'This ticket needs triage before an agent can work on it: /triage settles what to build and moves it on.'
         : 'No agent has worked on this ticket yet.',
       action: triage ? 'triage' : 'start',
-      blocked: nums.length
-        ? `Blocked by ${nums.join(', ')}. You can still start an agent, but it may conflict with ${nums.length === 1 ? `${nums[0]}'s` : 'their'} changes.`
-        : null,
+      blocked: !nums.length ? null
+        : triage ? `Blocked by ${nums.join(', ')}.`
+        : `Blocked by ${nums.join(', ')}. You can still start an agent, but it may conflict with ${nums.length === 1 ? `${nums[0]}'s` : 'their'} changes.`,
     };
   }
 
-  globalThis.TicketView = { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentBox };
+  globalThis.TicketView = { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage };
 })();

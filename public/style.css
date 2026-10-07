@@ -297,7 +297,7 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .send-back-label { font-size: 13.5px; font-weight: 600; }
 .send-back-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .agent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-/* A fixed line height keeps the state badge (whose ✓/⚠ glyphs come from a taller fallback font) level with the branch badge. */
+/* A fixed line height keeps the branch and hostname badges level with the error badge. */
 .agent-head .badge { line-height: 16px; white-space: normal; overflow-wrap: anywhere; }
 .agent-head button.badge { cursor: pointer; font: inherit; line-height: 16px; margin: 0; }
 .agent-head code { font-size: 11.5px; }

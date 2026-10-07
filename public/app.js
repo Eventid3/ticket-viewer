@@ -6,7 +6,7 @@ const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
-const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentBox } = TicketView;
+const { EMPTY_LANES, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage } = TicketView;
 const $ = id => document.getElementById(id);
 // emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 const state = { projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
@@ -229,7 +229,7 @@ function triageCommand(t, to) { return to ? `/triage move ${t.path} to ${to}` : 
 function nextCommand(t) {
   const a = agentOf(t);
   if (a?.bgId && t.status === 'claimed') return { text: attachCommand(a), what: 'attach command' };
-  if (!t.status || t.status === 'needs-triage' || t.status === 'needs-info') return { text: triageCommand(t), what: '/triage command' };
+  if (isTriage(t)) return { text: triageCommand(t), what: '/triage command' };
   if (t.status === 'ready-for-agent') return { text: implementCommand(t), what: '/implement command' };
   return null;
 }
@@ -629,13 +629,16 @@ function renderTicket(t) {
     t.sections.map(renderSection));
 }
 
+// A div of class `cls` with `md` rendered as markdown; null without markdown.
+function markdownDiv(cls, md) {
+  if (!md) return null;
+  const div = el('div', { class: `markdown ${cls}` });
+  div.innerHTML = renderMarkdown(md);
+  return div;
+}
+
 function renderSection(s) {
-  const markdownBlock = (md, cls = '') => {
-    if (!md) return null;
-    const div = el('div', { class: `ticket-text markdown ${cls}` });
-    div.innerHTML = renderMarkdown(md);
-    return div;
-  };
+  const markdownBlock = (md, cls = '') => markdownDiv(`ticket-text ${cls}`, md);
   const inlineMarkdown = (tag, attrs, md) => { const n = el(tag, attrs); n.innerHTML = inline(md); return n; };
   const head = s.label ? el('div', { class: 'ticket-label' }, s.label) : null;
   if (s.key === 'criteria') {
@@ -688,12 +691,12 @@ function setCommandsOpen(open) {
   $('commandsBtn').setAttribute('aria-expanded', String(open));
 }
 
-// The header's primary actions: only those for the ticket's current state (headerActions in view.js), each wired to
-// the server's ticket action, which disables it with its reason when refused.
-function renderActions(t, a) {
+// The ticket's action buttons by name, each a function giving [text, attrs, onclick], wired to the server's ticket
+// action, which disables it with its reason when refused. `a`: the ticket's agent, for the buttons that need one.
+function actionButtons(t, a) {
   const { start, stop, resolveConflicts, mergeByHand, moves } = t.actions;
   const d = state.detail?.id === t.id ? state.detail : null;
-  const make = {
+  return {
     approve: () => ['✓ Approve', refused(moves.resolved, { title: `Mark resolved, stop the session and its worktree processes, and copy the command that merges ${a.branch} into ${a.ref || 'the branch you are on'}` }), async () => {
       const conflict = a.conflict;
       const result = await moveTicket(t, 'resolved');
@@ -725,6 +728,11 @@ function renderActions(t, a) {
       if (result) toast(result.clean ? `${label(t)}: merged ${a.ref} cleanly and committed` : `${label(t)}: ${plural(result.unresolved, 'file')} to resolve · opening meld`);
     }],
   };
+}
+
+// The header's primary actions: only those for the ticket's current state (headerActions in view.js).
+function renderActions(t, a) {
+  const make = actionButtons(t, a);
   const { buttons, note } = headerActions(t, a);
   fill($('drawerActions'),
     buttons.map(({ name, style }) => {
@@ -735,13 +743,13 @@ function renderActions(t, a) {
 }
 
 // The Agent section: what the agent did (its final message as a summary and report), its changes, and sending it back
-// with notes; or, without an agent, how to get one going (noAgentBox in view.js).
+// with notes; or, without an agent, how to get one going (noAgentPrompt in view.js).
 function renderAgent() {
   const box = $('drawerAgent');
   const t = state.ticket && findTicket(state.ticket);
   const a = t && agentOf(t);
   const d = state.detail?.id === t?.id ? state.detail : null;
-  const empty = t && !a ? noAgentBox(t) : null;
+  const empty = t && !a ? noAgentPrompt(t) : null;
   // Empty it too: the previous ticket's buttons (Stop agent) are bound to that ticket.
   if (!t || (!a && !empty)) { box.hidden = true; box.replaceChildren(); return; }
   box.hidden = false;
@@ -756,14 +764,14 @@ function renderAgent() {
     el('div', { class: 'agent-title' },
       el('h3', {}, agentHeading(a)),
       agentStateLabel(a)),
-    el('div', { class: 'agent-head' },
-      badgeButton(el('code', {}, a.branch), a.branch, 'branch'),
-      a.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
-      a.error ? el('span', { class: 'badge blocked' }, a.error) : null),
     pending ? el('div', { class: 'pending', 'data-keep': 'pending' },
       el('div', { class: 'pending-label' }, 'Waiting to run'),
       el('code', {}, pending),
       el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`)) : null,
+    el('div', { class: 'agent-head' },
+      badgeButton(el('code', {}, a.branch), a.branch, 'branch'),
+      a.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
+      a.error ? el('span', { class: 'badge blocked' }, a.error) : null),
     final ? renderReport(final, a.reviewNotes) : null,
     renderMerge(t, a),
     a.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
@@ -777,30 +785,26 @@ function renderAgent() {
       el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
 }
 
-// A ticket without an agent: why, and the one thing to do about it.
+// A ticket without an agent: why, and the one thing to do about it (Start agent only when the server offers it).
 function renderNoAgent(t, { text, action, blocked }) {
-  const { start } = t.actions;
-  const button = action === 'triage'
-    ? btn('Copy /triage', { class: 'btn primary', title: `Copy "${triageCommand(t)}"` }, () => copy(triageCommand(t), '/triage command'))
-    : start ? btn(start.resume ? '▶ Continue agent' : '▶ Start agent', refused(start, { class: 'btn primary', title: 'Claim the ticket and run /implement as a background session' }), () => moveTicket(t, 'claimed'))
-    : null;
+  const shown = action !== 'start' || !!t.actions.start;
+  const [buttonText, attrs, onclick] = shown ? actionButtons(t, null)[action]() : [];
   return el('div', { class: 'no-agent' },
     el('p', {}, text),
     blocked ? el('p', { class: 'blocked-note' }, blocked) : null,
-    button ? el('div', { class: 'agent-actions' }, button) : null);
+    shown ? el('div', { class: 'agent-actions' }, btn(buttonText, { ...attrs, class: 'btn primary' }, onclick)) : null);
 }
 
 // The agent's final message: its prose as the summary, its `- **Label:** text` bullets as report rows (splitReport in
 // view.js), then the review notes it was last sent back with, and anything else it wrote. Without such bullets, the whole message.
 function renderReport(message, reviewNotes) {
-  const markdown = (cls, md) => { const n = el('div', { class: `markdown ${cls}` }); n.innerHTML = renderMarkdown(md); return n; };
   const { summary, items, rest } = splitReport(message);
   const rows = [...items, ...(reviewNotes ? [{ label: 'Review', text: reviewNotes }] : [])];
-  return el('div', { class: 'report', 'data-keep': 'report', title: 'The agent\'s last message' },
-    summary ? markdown('agent-summary', summary) : null,
+  return el('div', { class: 'report' },
+    markdownDiv('agent-summary', summary),
     rows.length ? el('div', { class: 'report-items' },
-      rows.flatMap(r => [el('div', { class: 'report-label' }, r.label), markdown('report-value', r.text)])) : null,
-    rest ? markdown('agent-summary rest', rest) : null);
+      rows.flatMap(r => [el('div', { class: 'report-label' }, r.label), markdownDiv('report-value', r.text)])) : null,
+    markdownDiv('agent-summary rest', rest));
 }
 
 // Sending a ticket in review back to its agent, with notes; codemap's structure diff fills them with its flagged notes.

@@ -218,7 +218,7 @@ test('bullets inside a code fence are not report items', () => {
   assert.equal(splitReport(md).summary, md);
 });
 
-const { agentHeading, noAgentBox } = globalThis.TicketView;
+const { agentHeading, noAgentPrompt, isTriage } = globalThis.TicketView;
 
 test('the Agent section heading follows the agent state; needs you and waiting for a reply have their own', () => {
   assert.equal(agentHeading(null), 'Agent');
@@ -233,18 +233,36 @@ test('the Agent section heading follows the agent state; needs you and waiting f
 
 test('no agent: ready-for-agent offers Start agent, triage statuses offer Copy /triage, others show nothing', () => {
   const t = (status, openBlockers = []) => ({ status, openBlockers });
-  assert.deepEqual(noAgentBox(t('ready-for-agent')), { text: 'No agent has worked on this ticket yet.', action: 'start', blocked: null });
+  assert.deepEqual(noAgentPrompt(t('ready-for-agent')), { text: 'No agent has worked on this ticket yet.', action: 'start', blocked: null });
   for (const s of ['needs-triage', 'needs-info', null]) {
-    const box = noAgentBox(t(s));
+    const box = noAgentPrompt(t(s));
     assert.equal(box.action, 'triage', String(s));
     assert.match(box.text, /needs triage/);
   }
-  for (const s of ['ready-for-human', 'resolved', 'wontfix', 'claimed', 'ready-for-review']) assert.equal(noAgentBox(t(s)), null, s);
+  for (const s of ['ready-for-human', 'resolved', 'wontfix', 'claimed', 'ready-for-review']) assert.equal(noAgentPrompt(t(s)), null, s);
 });
 
 test('no agent on a blocked ticket warns that an agent may conflict with the blockers', () => {
-  assert.equal(noAgentBox({ status: 'ready-for-agent', openBlockers: ['08'] }).blocked,
+  assert.equal(noAgentPrompt({ status: 'ready-for-agent', openBlockers: ['08'] }).blocked,
     "Blocked by #08. You can still start an agent, but it may conflict with #08's changes.");
-  assert.equal(noAgentBox({ status: 'needs-triage', openBlockers: ['08', '09'] }).blocked,
+  assert.equal(noAgentPrompt({ status: 'ready-for-agent', openBlockers: ['08', '09'] }).blocked,
     "Blocked by #08, #09. You can still start an agent, but it may conflict with their changes.");
+  assert.equal(noAgentPrompt({ status: 'needs-triage', openBlockers: ['08'] }).blocked, 'Blocked by #08.', 'no agent to start from triage');
+});
+
+test('needs-triage, needs-info and no status are the triage statuses', () => {
+  for (const s of ['needs-triage', 'needs-info', null, undefined, '']) assert.ok(isTriage({ status: s }), String(s));
+  for (const s of ['ready-for-agent', 'claimed', 'resolved']) assert.ok(!isTriage({ status: s }), s);
+});
+
+test('a longer fence only closes on a fence at least as long, and bullets after it count again', () => {
+  const md = 'Summary.\n\n````\n```\n- **Change:** inside\n````\n\n- **Change:** outside';
+  assert.deepEqual(splitReport(md).items, [{ label: 'Change', text: 'outside' }]);
+  assert.deepEqual(splitReport('~~~~\n~~~\n- **A:** x\n~~~~\n- **B:** y').items, [{ label: 'B', text: 'y' }]);
+});
+
+test('an unindented line right below a report bullet continues it', () => {
+  assert.deepEqual(splitReport('S.\n\n- **Change:** foo\nbar\n\nAfter.'), {
+    summary: 'S.', items: [{ label: 'Change', text: 'foo\nbar' }], rest: 'After.',
+  });
 });
