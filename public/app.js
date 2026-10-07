@@ -964,7 +964,6 @@ document.addEventListener('keydown', e => {
     const next = t && (nextCommand(t) || { text: implementCommand(t), what: '/implement command' });
     if (next) copy(next.text, next.what);
   }
-  if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('search').focus(); }
 });
 // Coming back from the codemap tab: pick up the items you marked there.
 function refreshStructure() {
