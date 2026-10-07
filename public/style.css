@@ -85,8 +85,8 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 
 /* The pulsing running dot. */
 .run-dot {
-  display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: oklch(0.78 0.12 205);
-  box-shadow: 0 0 0 3px oklch(0.78 0.12 205 / .18); animation: tvpulse 1.4s ease-in-out infinite;
+  display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--a-running);
+  box-shadow: 0 0 0 3px oklch(from var(--a-running) l c h / .18); animation: tvpulse 1.4s ease-in-out infinite;
 }
 @keyframes tvpulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.75); } }
 @media (prefers-reduced-motion: reduce) { .run-dot { animation: none; } }
@@ -149,7 +149,7 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-width); background: var(--surface);
-  border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgba(0, 0, 0, .12); overflow-y: auto;
+  border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgb(0 0 0 / .4); overflow-y: auto;
   padding: 16px 22px 40px; z-index: 10;
 }
 /* On wide screens, reserve the drawer's width at the board's right end so every lane can be scrolled clear of it,

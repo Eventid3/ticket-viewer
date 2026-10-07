@@ -48,4 +48,5 @@ test('live counts: running includes starting agents, to review counts ready-for-
   const agents = { a: { state: 'running' }, b: { state: 'starting' }, c: { state: 'done' }, e: { state: 'stopped' } };
   assert.deepEqual(liveCounts(tickets, agents), { running: 2, review: 2 });
   assert.deepEqual(liveCounts(tickets, undefined), { running: 0, review: 2 });
+  assert.deepEqual(liveCounts(tickets, null), { running: 0, review: 2 });
 });

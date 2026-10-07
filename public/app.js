@@ -385,7 +385,8 @@ function renderToolbar() {
 function segmented(box, options, value, onpick) {
   fill(box, options.map(([v, text, title]) => el('button', {
     type: 'button', class: 'seg-btn', 'aria-pressed': String(v === value), title,
-    onclick: () => { if (v !== value) onpick(v); },
+    // onpick redraws the buttons, so focus moves to the newly pressed one.
+    onclick: () => { if (v !== value) { onpick(v); box.querySelector('[aria-pressed="true"]')?.focus(); } },
   }, text)));
 }
 

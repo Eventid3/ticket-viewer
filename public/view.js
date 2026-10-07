@@ -17,7 +17,7 @@
   }
 
   // The top bar's counts: agents running (or starting) and tickets waiting for review.
-  function liveCounts(tickets, agents = {}) {
+  function liveCounts(tickets, agents) {
     return {
       running: tickets.filter(t => ['running', 'starting'].includes(agents?.[t.id]?.state)).length,
       review: tickets.filter(t => t.status === 'ready-for-review').length,
