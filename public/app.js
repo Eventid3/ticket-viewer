@@ -837,7 +837,7 @@ function renderAgent() {
     final ? renderReport(final, a.reviewNotes) : null,
     renderMerge(t, a),
     a.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
-    changes?.commits.length || changes?.files.length ? renderChanges(t, a, changes) : null,
+    changes?.commits.length || changes?.files.length || changes?.dirty ? renderChanges(t, a, changes) : null,
     t.status === 'ready-for-review' ? renderSendBack(t) : null,
     d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: !!a.busy },
       el('summary', {}, `Agent activity · ${plural(d.items.length, 'step')}`),
@@ -960,12 +960,12 @@ function renderChanges(t, a, changes) {
         el('span', { class: 'add', style: `width: ${bars[i].added}px` }),
         el('span', { class: 'del', style: `width: ${bars[i].deleted}px` })),
     ])) : null,
-    changes.dirty ? el('div', { class: 'change-note muted' }, 'Uncommitted changes in the worktree (counted in the files above)') : null,
+    changes.dirty ? el('div', { class: 'change-note muted' }, 'Uncommitted changes in the worktree') : null,
     structure ? renderStructure(t) : null);
 }
 
 // A one-line warning in the Changes block, e.g. when codemap failed, with a Retry button.
-function warningRow(text, retry) {
+function changeWarning(text, retry) {
   return el('div', { class: 'change-warning' },
     el('span', { class: 'warning-text', title: text }, `⚠ ${text}`),
     btn('Retry', {}, retry));
@@ -992,8 +992,8 @@ function renderStructure(t) {
       s && !st.loading && s.groups.length ? el('span', { class: 'muted' }, s.unmarked ? `${plural(s.unmarked, 'item')} not marked yet` : 'all marked') : null,
       el('span', { class: 'spacer' }),
       el('button', { class: 'icon-btn', title: 'Refresh the summary, e.g. after marking items in codemap', disabled: !!st.loading, onclick: () => loadStructure(t.id) }, '↻')),
-    st.viewError ? warningRow(`Could not open structure diff: ${st.viewError}`, () => openStructureDiff(t)) : null,
-    st.error ? warningRow(`Could not get the codemap summary: ${st.error}`, () => loadStructure(t.id)) : null,
+    st.viewError ? changeWarning(`Could not open structure diff: ${st.viewError}`, () => openStructureDiff(t)) : null,
+    st.error ? changeWarning(`Could not get the codemap summary: ${st.error}`, () => loadStructure(t.id)) : null,
     s ? el('div', { class: 'structure-groups' },
       s.groups.length
         ? s.groups.map(g => el('span', { class: 'badge' + (g.kind === 'other-change' ? '' : ' structural') }, `${g.label}: ${g.count}`))

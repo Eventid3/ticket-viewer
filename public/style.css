@@ -25,6 +25,8 @@
   --danger: oklch(0.72 0.14 25); --danger-bg: oklch(0.25 0.04 25);
   --ok: oklch(0.75 0.13 150); --ok-bg: oklch(0.25 0.04 150);
   --warn: oklch(0.8 0.13 80); --warn-bg: oklch(0.26 0.04 80);
+  /* Added and deleted lines in the Changes block. */
+  --diff-add: oklch(0.76 0.13 150); --diff-del: var(--danger);
   /* Agent state colours, for card marks, the drawer's state label and the project alerts (--a-text sits on --a-waiting). */
   --a-running: oklch(0.78 0.12 205); --a-idle: var(--s-ready-for-human); --a-waiting: var(--warn); --a-text: var(--bg);
   color-scheme: dark;
@@ -359,12 +361,15 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .changes { border: 1px solid oklch(0.28 0.006 260); border-radius: 9px; background: oklch(0.175 0.005 260); overflow: hidden; }
 .changes > summary.changes-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 14px; color: var(--text); list-style: none; }
 .changes > summary::-webkit-details-marker { display: none; }
+/* The marker is hidden, so a chevron shows the block folds (it starts folded outside ready-for-review). */
+.changes > summary::before { content: "▸"; color: var(--muted); font-size: 11px; margin-right: -4px; }
+.changes[open] > summary::before { content: "▾"; }
 .changes-title { font-size: 13.5px; font-weight: 600; }
 .changes-head .muted { font-size: 13px; }
 .changes-head .btn { font-size: 12.5px; }
 .diff-count { font: 12.5px var(--mono); }
-.changes .add { color: oklch(0.76 0.13 150); }
-.changes .del { color: oklch(0.72 0.14 25); }
+.changes .add { color: var(--diff-add); }
+.changes .del { color: var(--diff-del); }
 .changes > :not(summary) { border-top: 1px solid oklch(0.28 0.006 260); }
 .change-commit { display: flex; gap: 10px; align-items: baseline; padding: 9px 14px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .change-commit + .change-commit { border-top: 1px solid oklch(0.24 0.006 260); }
@@ -375,8 +380,8 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .change-files .add, .change-files .del { text-align: right; }
 .change-files .binary { grid-column: span 2; text-align: right; }
 .change-files .bar { display: flex; width: 50px; height: 6px; border-radius: 3px; overflow: hidden; background: oklch(0.25 0.006 260); }
-.change-files .bar .add { background: oklch(0.76 0.13 150); }
-.change-files .bar .del { background: oklch(0.72 0.14 25); }
+.change-files .bar .add { background: var(--diff-add); }
+.change-files .bar .del { background: var(--diff-del); }
 .change-note { padding: 9px 14px; font-size: 13px; }
 .change-warning { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border-radius: 7px; font-size: 12.5px; color: oklch(0.8 0.11 70); background: oklch(0.2 0.02 70 / .35); }
 .change-warning .warning-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
