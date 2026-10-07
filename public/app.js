@@ -4,9 +4,8 @@ const ALL = '__all__';
 const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
-const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
 
-const { EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions } = TicketView;
+const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions } = TicketView;
 const $ = id => document.getElementById(id);
 // layout: board or strip (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 const state = { layout: 'board', projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
@@ -29,7 +28,7 @@ function loadPrefs() {
   try {
     Object.assign(state, readPrefs(JSON.parse(localStorage.getItem('ticket-viewer') || '{}')));
   } catch { /* storage unavailable */ }
-  try { state.layout = readLayout(localStorage.getItem('tv:layout')); } catch { }
+  try { state.layout = readLayout(localStorage.getItem('tv:layout')); } catch { /* storage unavailable */ }
 }
 function savePrefs() {
   try { localStorage.setItem('ticket-viewer', JSON.stringify({ emptyLanes: state.emptyLanes, expandedLanes: state.expandedLanes, unblockedOnly: state.unblockedOnly, lastProject: state.lastProject })); } catch { }
@@ -375,7 +374,7 @@ function renderCounts(tickets) {
 // The top bar's toggles, drawn from state.
 function renderToolbar() {
   $('main').dataset.layout = state.layout;
-  segmented($('layout'), LAYOUTS.map(l => [l.value, l.label, l.title]), state.layout, v => {
+  segmented($('layoutSwitch'), LAYOUTS.map(l => [l.value, l.label, l.title]), state.layout, v => {
     state.layout = v;
     savePrefs();
     renderToolbar();
@@ -462,12 +461,9 @@ function renderCard(t) {
   const next = nextCommand(t);
   const movable = Object.values(t.actions.moves).some(m => m.ok);
   const card = el('div', {
-    class: 'card' + (state.ticket === t.id ? ' selected' : '') + (DONE.has(t.status) ? ' dim' : ''),
-    tabindex: '0', role: 'button', draggable: movable ? 'true' : null,
+    ...cardAttrs(t, 'card'), draggable: movable ? 'true' : null,
     ondragstart: e => { state.dragging = t; e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); },
     ondragend: () => { state.dragging = null; card.classList.remove('dragging'); },
-    onclick: () => openTicket(t.id),
-    onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(t.id); } },
   },
     el('div', { class: 'card-top' },
       el('span', { class: 'card-num' }, label(t)),
@@ -486,15 +482,20 @@ function renderCard(t) {
   return card;
 }
 
+// What every ticket card shares: class `cls`, selected and dim states, and opening the ticket by click, Enter or Space.
+function cardAttrs(t, cls) {
+  return {
+    class: cls + (state.ticket === t.id ? ' selected' : '') + (DONE.has(t.status) ? ' dim' : ''),
+    tabindex: '0', role: 'button',
+    onclick: () => openTicket(t.id),
+    onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(t.id); } },
+  };
+}
+
 // The Strip layout's one-line card: number, title, the agent's mark and the criteria progress.
 function renderRowCard(t) {
   const { running, done, needsYou } = rowMarks(t, agentOf(t));
-  return el('div', {
-    class: 'row-card' + (state.ticket === t.id ? ' selected' : '') + (DONE.has(t.status) ? ' dim' : ''),
-    tabindex: '0', role: 'button', title: t.title,
-    onclick: () => openTicket(t.id),
-    onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(t.id); } },
-  },
+  return el('div', { ...cardAttrs(t, 'row-card'), title: t.title },
     el('span', { class: 'card-num' }, label(t)),
     el('span', { class: 'row-title' }, t.title),
     running ? el('span', { class: 'run-dot', title: 'Agent running' }) : null,

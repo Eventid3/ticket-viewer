@@ -183,4 +183,5 @@ test('row card marks: the running dot or ✓ on active tickets, plus ⚠ when th
   assert.deepEqual(rowMarks(t('claimed', true), { state: 'waiting' }), { running: false, done: false, needsYou: true });
   assert.deepEqual(rowMarks(t('ready-for-agent'), null), { running: false, done: false, needsYou: false });
   assert.deepEqual(rowMarks(t('resolved'), { state: 'done' }), { running: false, done: false, needsYou: false }, 'resolved tickets show no agent mark');
+  assert.deepEqual(rowMarks(t('wontfix', true), { state: 'waiting' }), { running: false, done: false, needsYou: false }, 'nor ⚠');
 });

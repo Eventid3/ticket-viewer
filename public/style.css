@@ -117,10 +117,10 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
   flex: none; display: flex; flex-direction: column; gap: 7px; padding: 11px 12px 10px; border-radius: 8px; cursor: pointer;
   background: var(--card); border: 1px solid var(--border); color: inherit; text-align: left;
 }
-.card:hover { border-color: oklch(0.4 0.01 260); }
-.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.card.selected { background: oklch(0.26 0.035 255); border-color: oklch(0.66 0.13 255); }
-.card.dim { opacity: .66; }
+.card:hover, .row-card:hover { border-color: oklch(0.4 0.01 260); }
+.card:focus-visible, .row-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card.selected, .row-card.selected { background: oklch(0.26 0.035 255); border-color: oklch(0.66 0.13 255); }
+.card.dim, .row-card.dim { opacity: .66; }
 .card.dragging { opacity: .45; }
 .card[draggable] { cursor: grab; }
 .card-top { display: flex; align-items: center; gap: 8px; min-width: 0; color: oklch(0.64 0.008 260); font-size: 12px; line-height: 18px; }
@@ -184,17 +184,14 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .main[data-layout="strip"] .lane-empty { padding: 8px; border: 0; color: oklch(0.58 0.008 260); font-size: 12.5px; text-align: left; }
 .main[data-layout="strip"] .lane-collapsed { flex-basis: 34px; padding: 10px 0; font-size: 12px; }
 .main[data-layout="strip"] .lane-collapsed .lane-name { white-space: nowrap; }
-.main[data-layout="strip"] .drawer, .detail-empty { flex: 1 1 auto; min-height: 0; border-left: 0; border-top: 1px solid var(--border); }
-.detail-empty { display: flex; align-items: center; justify-content: center; background: var(--panel); color: oklch(0.6 0.008 260); font-size: 14px; }
-/* The Strip's one-line card; selected and dim like the Board's cards. */
+.main[data-layout="strip"] .drawer { flex: 1 1 auto; min-height: 0; border-left: 0; border-top: 1px solid var(--border); }
+/* Only shown in the Strip, with nothing selected. */
+.detail-empty { flex: 1 1 auto; min-height: 0; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: center; background: var(--panel); color: oklch(0.6 0.008 260); font-size: 14px; }
+/* The Strip's one-line card; its hover, selected and dim states are the Board card's (.card). */
 .row-card {
   flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 6px; cursor: pointer;
   background: var(--card); border: 1px solid var(--border); font-size: 13px;
 }
-.row-card:hover { border-color: oklch(0.4 0.01 260); }
-.row-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.row-card.selected { background: oklch(0.26 0.035 255); border-color: oklch(0.66 0.13 255); }
-.row-card.dim { opacity: .66; }
 .row-card .card-num { font-size: 12px; color: oklch(0.62 0.008 260); }
 .row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-done { color: oklch(0.78 0.13 150); font-size: 12px; }

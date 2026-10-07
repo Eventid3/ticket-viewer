@@ -2,6 +2,8 @@
 // Pure board-view helpers, loaded before app.js. test/view.test.mjs imports this file and reads globalThis.TicketView.
 (() => {
   const EMPTY_LANES = ['show', 'collapse', 'hide'];
+  // Statuses whose tickets are finished: their cards are dimmed and show no agent marks.
+  const DONE = new Set(['resolved', 'done', 'closed', 'wontfix']);
   // The top bar's layout switcher, in order. The choice is saved under tv:layout.
   const LAYOUTS = [
     { value: 'board', label: 'Board', title: 'Board with detail drawer' },
@@ -14,13 +16,13 @@
   }
 
   // What a Strip row card shows after its title: the running dot or ✓ for the agent of an active ticket
-  // (resolved and wontfix show none, like the Board cards), and ⚠ while the agent needs you.
+  // and ⚠ while the agent needs you. Finished tickets show none, like the Board cards.
   function rowMarks(t, a) {
-    const active = !['resolved', 'done', 'closed', 'wontfix'].includes(t.status);
+    const active = !DONE.has(t.status);
     return {
       running: active && ['running', 'starting'].includes(a?.state),
       done: active && a?.state === 'done',
-      needsYou: !!t.needsYou,
+      needsYou: active && !!t.needsYou,
     };
   }
 
@@ -110,5 +112,5 @@
     return { buttons, note: null };
   }
 
-  globalThis.TicketView = { EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions };
+  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions };
 })();
