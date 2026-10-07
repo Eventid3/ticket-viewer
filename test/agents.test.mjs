@@ -176,6 +176,50 @@ test('reads activity and the last message from the session transcript', async ()
   assert.equal(cli.calls.length, 1);
 });
 
+test('reads each activity item\'s time and the run\'s start and last item from the transcript', async () => {
+  const { cli, agents, claudeHome, ticket } = setup();
+  const before = Date.now();
+  await agents.start(ID, ticket);
+  await agents.poll();
+  const dir = path.join(claudeHome, 'projects', 'some-project');
+  fs.mkdirSync(dir, { recursive: true });
+  const lines = [
+    { type: 'user', timestamp: '2026-10-07T12:00:00.000Z', message: { content: 'go' } },
+    { type: 'assistant', timestamp: '2026-10-07T12:00:05.000Z', message: { content: [{ type: 'text', text: 'Looking around' }, { type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }] } },
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'No timestamp' }] } },
+    { type: 'assistant', timestamp: '2026-10-07T12:09:30.000Z', message: { content: [{ type: 'text', text: 'Done' }] } },
+  ];
+  fs.writeFileSync(path.join(dir, 'session-bg1.jsonl'), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+
+  const { items, startedAt, lastAt } = agents.activity(ID);
+  assert.deepEqual(items.map(i => [i.text, i.at]), [
+    ['Looking around', '2026-10-07T12:00:05.000Z'],
+    ['Bash npm test', '2026-10-07T12:00:05.000Z'],
+    ['No timestamp', null],
+    ['Done', '2026-10-07T12:09:30.000Z'],
+  ]);
+  assert.equal(lastAt, '2026-10-07T12:09:30.000Z');
+  assert.ok(Date.parse(startedAt) >= before - 1000 && Date.parse(startedAt) <= Date.now(), 'the run started when the session was launched');
+
+  // A resume starts a new run; a session that stops records when the board saw it stop.
+  await agents.resume(ID, ticket, 'Carry on');
+  assert.ok(Date.parse(agents.activity(ID).startedAt) >= Date.parse(startedAt));
+  assert.equal(agents.get(ID).stoppedAt, null);
+  cli.sessions.length = 0;
+  await agents.poll();
+  assert.equal(agents.get(ID).state, 'stopped');
+  assert.ok(Date.parse(agents.get(ID).stoppedAt) <= Date.now());
+});
+
+test('an agent without a transcript has no items and no last item time', async () => {
+  const { agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  const { items, lastAt, startedAt } = agents.activity(ID);
+  assert.deepEqual(items, []);
+  assert.equal(lastAt, null);
+  assert.ok(startedAt);
+});
+
 test('state survives a restart of the board', async () => {
   const { repo, cli, agents, ticket } = setup();
   await agents.start(ID, ticket);

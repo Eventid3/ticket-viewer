@@ -310,6 +310,7 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .agent-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
 .agent-title h3 { margin: 0; font-size: 16px; font-weight: 600; }
 .state-label { font-size: 13px; font-weight: 500; }
+.agent-meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .state-label.waiting { display: inline-flex; white-space: normal; }
 .pending { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 9px; border: 1px solid oklch(0.4 0.08 80); background: oklch(0.2 0.02 80 / .35); font-size: 13px; }
 .pending-label { color: var(--warn); font-weight: 600; }
@@ -353,11 +354,14 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .agent pre { margin: 6px 0 0; padding: 6px 8px; background: var(--bg); border-radius: 6px; overflow-x: auto; font-size: 11.5px; }
 .commits { margin: 6px 0 0; padding: 6px 8px; list-style: none; background: var(--bg); border-radius: 6px; font: 11.5px/1.45 var(--mono); }
 .commits li { overflow-wrap: anywhere; padding-left: 2ch; text-indent: -2ch; }
-.activity ol { margin: 6px 0 0; padding-left: 20px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
-.activity li { overflow-wrap: anywhere; white-space: pre-wrap; }
-.activity li.tool { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
-.activity li.error { color: var(--danger); }
-.activity li.result { color: var(--ok); }
+/* The activity feed: time, marker and text per row; the latest row is brighter. */
+.feed { margin: 0; padding: 6px 0; list-style: none; max-height: 340px; overflow-y: auto; border: 1px solid var(--border); border-radius: 9px; background: oklch(0.17 0.005 260); }
+.activity .feed { margin-top: 8px; }
+.feed-row { display: grid; grid-template-columns: 52px 16px minmax(0, 1fr); align-items: baseline; padding: 5px 14px; }
+.feed-row time { font: 12px var(--mono); color: oklch(0.55 0.008 260); font-variant-numeric: tabular-nums; }
+.feed-marker { align-self: start; display: flex; align-items: center; height: 1.5em; font: 12.5px/1.5 var(--mono); color: oklch(0.55 0.008 260); }
+.feed-text { font: 12.5px/1.5 var(--mono); color: oklch(0.76 0.006 260); white-space: pre-wrap; overflow-wrap: anywhere; }
+.feed-row.latest .feed-text { color: var(--text); }
 .structure { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .structure .icon-btn { margin-left: auto; font-size: 14px; padding: 0 6px; }
 .structure-groups { display: flex; flex-wrap: wrap; gap: 4px; }

@@ -173,6 +173,44 @@
     }
   }
 
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const pad = n => String(n).padStart(2, '0');
+
+  // An ISO time as local HH:MM, with the day in front ("3 Oct 14:21") when it isn't today; '' without one.
+  function clockTime(iso, now = new Date()) {
+    if (!iso) return '';
+    const t = new Date(iso);
+    const n = new Date(now);
+    const today = t.getFullYear() === n.getFullYear() && t.getMonth() === n.getMonth() && t.getDate() === n.getDate();
+    return `${today ? '' : `${t.getDate()} ${MONTHS[t.getMonth()]} `}${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  }
+
+  // A length of time: "45s", "9m", "1h 5m"; with `seconds`, down to the second ("12m 14s"), for a live counter.
+  function duration(ms, seconds = false) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const [h, m, sec] = [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60];
+    if (seconds) return [h && `${h}h`, (h || m) && `${m}m`, `${sec}s`].filter(Boolean).join(' ');
+    if (s < 60) return `${s}s`;
+    return h ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  // The muted meta next to the Agent heading, from agent `a` and its detail `d` (startedAt and lastAt of its run):
+  // `{ text }`, plus `since` for a live counter that ticks from that time; null when there's nothing to say.
+  function agentMeta(a, d, now = Date.now()) {
+    const started = d?.startedAt ? Date.parse(d.startedAt) : null;
+    switch (a.state) {
+      case 'starting': case 'running': case 'waiting':
+        return started ? { text: `for ${duration(now - started, true)}`, since: d.startedAt } : null;
+      case 'done': case 'idle': {
+        if (!d?.lastAt) return null;
+        const ran = Date.parse(d.lastAt) - started;
+        return { text: `Finished ${clockTime(d.lastAt, now)}${started && ran >= 0 ? ` · ran ${duration(ran)}` : ''}` };
+      }
+      case 'stopped': return a.stoppedAt ? { text: `Stopped ${clockTime(a.stoppedAt, now)}` } : null;
+      default: return null;
+    }
+  }
+
   // The Agent section of ticket `t` without an agent: an explanation, one action (start or triage) and a warning when
   // it's blocked. Null leaves the section out (ready-for-human, resolved, wontfix, …).
   function noAgentPrompt(t) {
@@ -190,5 +228,5 @@
     };
   }
 
-  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage };
+  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, clockTime, duration, agentMeta };
 })();
