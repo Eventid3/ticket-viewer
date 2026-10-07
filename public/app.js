@@ -630,12 +630,13 @@ function renderTicket(t) {
 }
 
 function renderSection(s) {
-  const markdown = (md, cls = '') => {
+  const markdownBlock = (md, cls = '') => {
+    if (!md) return null;
     const div = el('div', { class: `ticket-text markdown ${cls}` });
     div.innerHTML = renderMarkdown(md);
-    return md ? div : null;
+    return div;
   };
-  const html = (tag, attrs, md) => { const n = el(tag, attrs); n.innerHTML = inline(md); return n; };
+  const inlineMarkdown = (tag, attrs, md) => { const n = el(tag, attrs); n.innerHTML = inline(md); return n; };
   const head = s.label ? el('div', { class: 'ticket-label' }, s.label) : null;
   if (s.key === 'criteria') {
     const done = s.items.filter(i => i.done).length;
@@ -646,15 +647,15 @@ function renderSection(s) {
         el('span', { class: 'progress-label' }, `${done}/${s.items.length}`)) : head,
       s.items.map(i => el('div', { class: 'criterion' + (i.done ? ' done' : '') },
         el('span', { class: 'checkbox', role: 'checkbox', 'aria-checked': String(i.done), 'aria-label': i.text }, i.done ? '✓' : ''),
-        html('span', { class: 'criterion-text' }, i.text))),
-      markdown(s.body));
+        inlineMarkdown('span', { class: 'criterion-text' }, i.text))),
+      markdownBlock(s.body));
   }
   if (s.key === 'outOfScope') {
     return el('div', { class: 'ticket-sub' }, head,
-      s.items.map(i => html('div', { class: 'out-of-scope' }, i)),
-      markdown(s.body));
+      s.items.map(i => inlineMarkdown('div', { class: 'out-of-scope' }, i)),
+      markdownBlock(s.body));
   }
-  return el('div', { class: 'ticket-sub' }, head, markdown(s.body, s.key === 'cause' || s.key === 'fix' ? 'quiet' : ''));
+  return el('div', { class: 'ticket-sub' }, head, markdownBlock(s.body, s.key === 'cause' || s.key === 'fix' ? 'quiet' : ''));
 }
 
 // The header's Commands menu: copy commands and paths, or a /triage move, so the agent makes the move (and writes the brief).

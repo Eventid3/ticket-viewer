@@ -266,3 +266,26 @@ test('no ticket text is lost', () => {
     for (const w of words) assert.ok(kept.includes(w.replace(/:$/, '')), `"${w}" is shown`);
   }
 });
+
+test('a bare checklist ends at a plain list, and checklists in other known sections stay there', () => {
+  const k = byKey(parseSections('# Q\n\n- [ ] one\n\n- not a criterion\n\n## Out of scope\n\n- [ ] not doing x\n- y\n'));
+  assert.deepEqual(k.criteria.items.map(i => i.text), ['one']);
+  assert.equal(k.intro.body, '- not a criterion');
+  assert.deepEqual(k.outOfScope.items, ['[ ] not doing x', 'y']);
+});
+
+test('above the first section, another label stays in the paragraphs of the known label it follows', () => {
+  const s = parseSections('# Q\n\n**What to build:** a\n\n**Note:** b\n');
+  assert.deepEqual(s.map(x => x.key), ['what']);
+  assert.equal(s[0].body, 'a\n\n**Note:** b');
+});
+
+test('a fence only closes on a bare fence line', () => {
+  const s = parseSections('# Q\n\n## Notes\n\n````\n```js\n## Fix\n```\n````\n');
+  assert.deepEqual(s.map(x => x.label), ['Notes']);
+});
+
+test('the card progress counts the acceptance criteria the panel shows', () => {
+  const t = parseTicket('# Q\n\n- [x] a\n\n## Notes\n\n```\n- [ ] in code\n```\n\n## Comments\n\n- [ ] in a comment\n', '01-q.md');
+  assert.deepEqual(t.checks, { done: 1, total: 1 });
+});
