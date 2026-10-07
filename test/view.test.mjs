@@ -294,6 +294,7 @@ test('clock times are HH:MM, with the day in front when it is not today', () => 
   assert.equal(clockTime(new Date(2026, 9, 7, 9, 5).toISOString(), now), '09:05');
   assert.equal(clockTime(new Date(2026, 9, 3, 14, 21).toISOString(), now), '3 Oct 14:21');
   assert.equal(clockTime(null, now), '');
+  assert.equal(globalThis.TicketView.hhmm(new Date(2026, 9, 3, 14, 21).toISOString()), '14:21', 'feed rows: always just HH:MM');
 });
 
 test('durations: whole minutes for a finished run, seconds for a live one', () => {

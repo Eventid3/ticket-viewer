@@ -176,13 +176,20 @@
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const pad = n => String(n).padStart(2, '0');
 
+  // An ISO time as local HH:MM; '' without one.
+  function hhmm(iso) {
+    if (!iso) return '';
+    const t = new Date(iso);
+    return `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  }
+
   // An ISO time as local HH:MM, with the day in front ("3 Oct 14:21") when it isn't today; '' without one.
   function clockTime(iso, now = new Date()) {
     if (!iso) return '';
     const t = new Date(iso);
     const n = new Date(now);
     const today = t.getFullYear() === n.getFullYear() && t.getMonth() === n.getMonth() && t.getDate() === n.getDate();
-    return `${today ? '' : `${t.getDate()} ${MONTHS[t.getMonth()]} `}${pad(t.getHours())}:${pad(t.getMinutes())}`;
+    return `${today ? '' : `${t.getDate()} ${MONTHS[t.getMonth()]} `}${hhmm(iso)}`;
   }
 
   // A length of time: "45s", "9m", "1h 5m"; with `seconds`, down to the second ("12m 14s"), for a live counter.
@@ -194,13 +201,16 @@
     return h ? `${h}h ${m}m` : `${m}m`;
   }
 
+  // A working agent's live counter, "for 12m 14s", from when its run started.
+  const runningFor = (since, now = Date.now()) => `for ${duration(now - Date.parse(since), true)}`;
+
   // The muted meta next to the Agent heading, from agent `a` and its detail `d` (startedAt and lastAt of its run):
   // `{ text }`, plus `since` for a live counter that ticks from that time; null when there's nothing to say.
   function agentMeta(a, d, now = Date.now()) {
     const started = d?.startedAt ? Date.parse(d.startedAt) : null;
     switch (a.state) {
       case 'starting': case 'running': case 'waiting':
-        return started ? { text: `for ${duration(now - started, true)}`, since: d.startedAt } : null;
+        return started ? { text: runningFor(d.startedAt, now), since: d.startedAt } : null;
       case 'done': case 'idle': {
         if (!d?.lastAt) return null;
         const ran = Date.parse(d.lastAt) - started;
@@ -228,5 +238,5 @@
     };
   }
 
-  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, clockTime, duration, agentMeta };
+  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, hhmm, clockTime, duration, runningFor, agentMeta };
 })();

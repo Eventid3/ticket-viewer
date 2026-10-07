@@ -5,7 +5,7 @@ const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 
-const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, clockTime, agentMeta } = TicketView;
+const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, hhmm, runningFor, agentMeta } = TicketView;
 const $ = id => document.getElementById(id);
 // layout: board or strip (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 const state = { layout: 'board', projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
@@ -635,7 +635,7 @@ function restoreScroll(n) {
   const s = drawerView.scroll[n.dataset.keep];
   // data-follow lists start at the bottom and stay pinned there as items arrive, like a terminal.
   const follow = 'follow' in n.dataset;
-  n.scrollTop = (!s && follow) || (s?.atBottom && follow) ? n.scrollHeight : s?.top ?? 0;
+  n.scrollTop = follow && (!s || s.atBottom) ? n.scrollHeight : s?.top ?? 0;
 }
 
 function renderDrawer() {
@@ -826,7 +826,7 @@ function renderAgent() {
   const meta = agentMeta(a, d);
   // The activity feed: open and first until the agent is done, then a collapsed toggle at the end.
   const feed = d?.items.length ? renderFeed(d.items, ['starting', 'running'].includes(a.state)) : null;
-  const done = a.state === 'done';
+  const collapsed = a.state === 'done';
   fill(box,
     el('div', { class: 'agent-title' },
       el('h3', {}, agentHeading(a)),
@@ -836,7 +836,7 @@ function renderAgent() {
       el('div', { class: 'pending-label' }, 'Waiting to run'),
       el('code', {}, pending),
       el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`)) : null,
-    done ? null : feed,
+    collapsed ? null : feed,
     el('div', { class: 'agent-head' },
       badgeButton(el('code', {}, a.branch), a.branch, 'branch'),
       a.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
@@ -849,26 +849,26 @@ function renderAgent() {
       changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
       changes.stat ? el('pre', {}, changes.stat) : null) : null,
     t.status === 'ready-for-review' ? renderSendBack(t, a, d) : null,
-    done && feed ? el('details', { class: 'activity', 'data-keep': 'activity' },
+    collapsed && feed ? el('details', { class: 'activity', 'data-keep': 'activity' },
       el('summary', {}, `Agent activity · ${plural(d.items.length, 'step')}`), feed) : null);
 }
 
 // What the agent said and did, one row per item: its time, a marker (the pulsing dot on the latest row while the agent
 // runs) and the text. A data-follow list, so it stays at the bottom as items arrive unless you've scrolled up.
-function renderFeed(items, running) {
+function renderFeed(items, pulsing) {
   return el('ol', { class: 'feed', 'data-keep': 'activity-list', 'data-follow': true }, items.map((x, i) => {
     const latest = i === items.length - 1;
     return el('li', { class: `feed-row ${x.kind}${latest ? ' latest' : ''}` },
       // HH:MM only; the day is in the tooltip.
-      el('time', { datetime: x.at, title: x.at ? new Date(x.at).toLocaleString() : null }, clockTime(x.at).slice(-5)),
-      el('span', { class: 'feed-marker', 'aria-hidden': 'true' }, latest && running ? el('span', { class: 'run-dot' }) : x.kind === 'tool' ? '›' : '·'),
+      el('time', { datetime: x.at, title: x.at ? new Date(x.at).toLocaleString() : null }, hhmm(x.at)),
+      el('span', { class: 'feed-marker', 'aria-hidden': 'true' }, latest && pulsing ? el('span', { class: 'run-dot' }) : x.kind === 'tool' ? '›' : '·'),
       el('span', { class: 'feed-text' }, x.text));
   }));
 }
 
 // The running agent's "for 12m 14s" counts up every second, without redrawing the drawer.
 setInterval(() => {
-  for (const n of document.querySelectorAll('[data-since]')) n.textContent = agentMeta({ state: 'running' }, { startedAt: n.dataset.since }).text;
+  for (const n of document.querySelectorAll('[data-since]')) n.textContent = runningFor(n.dataset.since);
 }, 1000);
 
 // A ticket without an agent: why, and the one thing to do about it (Start agent only when the server offers it).

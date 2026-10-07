@@ -211,6 +211,20 @@ test('reads each activity item\'s time and the run\'s start and last item from t
   assert.ok(Date.parse(agents.get(ID).stoppedAt) <= Date.now());
 });
 
+test('a new start times its run from the start, not from the previous run, even when launching fails', async () => {
+  const { cli, agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  await agents.poll();
+  cli.sessions.length = 0;
+  await agents.poll();
+  const first = agents.activity(ID).startedAt;
+  await new Promise(r => setTimeout(r, 5));
+  cli.background = async () => { throw new Error('boom'); };
+  await assert.rejects(agents.start(ID, ticket));
+  assert.ok(Date.parse(agents.activity(ID).startedAt) > Date.parse(first));
+  assert.equal(agents.get(ID).stoppedAt, null);
+});
+
 test('an agent without a transcript has no items and no last item time', async () => {
   const { agents, ticket } = setup();
   await agents.start(ID, ticket);
