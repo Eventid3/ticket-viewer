@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseTicket, setStatus, appendComment, loadFeature, resolveFeatures, isFeatureCompleted } from '../lib/tickets.mjs';
+import { parseTicket, parseSections, setStatus, appendComment, loadFeature, resolveFeatures, isFeatureCompleted } from '../lib/tickets.mjs';
 
 const BOLD = `# 06: Build green on Umbraco 17
 
@@ -95,4 +95,174 @@ test('a feature is completed when it has tickets and every one is in the done se
   assert.equal(isFeatureCompleted([t('resolved'), t('wontfix'), t('done'), t('closed')]), true);
   assert.equal(isFeatureCompleted([t('resolved'), t('ready-for-agent')]), false);
   assert.equal(isFeatureCompleted([]), false, 'a feature with no tickets is not completed');
+});
+
+// ---- parseSections: the Ticket section's labelled subsections ------------------------------------------
+
+const LABELS = `# 04: Two-column body
+
+**Status:** claimed
+
+**Type:** enhancement
+
+**Blocked by:** 03
+
+**What to build:** Lay out the body as two sections.
+
+**Body layout.** Padding 24px, a \`flex-wrap\` row.
+
+- Heading row: h3 "Ticket"
+
+- [ ] The drawer stacks
+- [x] Tests cover the parsing
+  for both styles
+
+## Out of scope
+
+- Ticking criteria (05)
+- The Agent section
+
+## Comments
+
+- **2026-09-01:** looks good
+**Fix:** later
+`;
+
+const HEADINGS = `# 09: Toast covers the drawer
+
+Status: ready-for-agent
+Type: bug
+
+## What to build
+
+Toasts sit on top of the drawer.
+
+## Cause
+
+\`.toast\` is fixed bottom right.
+
+## Fix
+
+Move it bottom left.
+
+## Acceptance criteria
+
+- [x] Toasts never cover drawer controls
+- [ ] Toasts stay readable
+
+## Out of scope
+
+- Restyling toasts
+
+## Notes
+
+Anything else.
+`;
+
+const BRIEF = `# 02: Hostnames
+
+**Status:** resolved
+
+**What to build:** Give each ticket a hostname.
+
+## Agent Brief
+
+**Category:** enhancement
+**Summary:** Per-ticket hostnames.
+
+**Acceptance criteria:**
+- [x] Stable hostname
+- [ ] Reviewer checks
+
+**Out of scope:**
+- Assigning ports
+
+**Key interfaces:**
+- \`names()\`
+`;
+
+const byKey = sections => Object.fromEntries(sections.map(s => [s.key ?? s.label, s]));
+
+test('sections from **Label:** paragraphs: what to build keeps its paragraphs, a bare checklist is the criteria', () => {
+  const s = parseSections(LABELS);
+  assert.deepEqual(s.map(x => x.key ?? x.label), ['what', 'criteria', 'outOfScope', 'Comments']);
+  const k = byKey(s);
+  assert.equal(k.what.label, 'What to build');
+  assert.equal(k.what.body, 'Lay out the body as two sections.\n\n**Body layout.** Padding 24px, a `flex-wrap` row.\n\n- Heading row: h3 "Ticket"');
+  assert.deepEqual(k.criteria.items, [
+    { text: 'The drawer stacks', done: false, line: 14 },
+    { text: 'Tests cover the parsing for both styles', done: true, line: 15 },
+  ]);
+  assert.equal(k.criteria.label, 'Acceptance criteria');
+  assert.deepEqual(k.outOfScope.items, ['Ticking criteria (05)', 'The Agent section']);
+  assert.equal(k.outOfScope.body, '');
+  assert.equal(k.Comments.key, null);
+  assert.equal(k.Comments.body, '- **2026-09-01:** looks good\n**Fix:** later', 'labels inside comments stay in the comments');
+});
+
+test('sections from ## headings, in the known order, then the others', () => {
+  const s = parseSections(HEADINGS);
+  assert.deepEqual(s.map(x => x.key ?? x.label), ['what', 'cause', 'fix', 'criteria', 'outOfScope', 'Notes']);
+  const k = byKey(s);
+  assert.equal(k.what.body, 'Toasts sit on top of the drawer.');
+  assert.equal(k.cause.label, 'Cause');
+  assert.equal(k.cause.body, '`.toast` is fixed bottom right.');
+  assert.equal(k.fix.body, 'Move it bottom left.');
+  assert.deepEqual(k.criteria.items.map(i => [i.text, i.done]), [['Toasts never cover drawer controls', true], ['Toasts stay readable', false]]);
+  assert.deepEqual(k.outOfScope.items, ['Restyling toasts']);
+  assert.equal(k.Notes.body, 'Anything else.');
+});
+
+test('known **Label:** paragraphs inside another section are lifted out; the rest of that section stays', () => {
+  const s = parseSections(BRIEF);
+  assert.deepEqual(s.map(x => x.key ?? x.label), ['what', 'criteria', 'outOfScope', 'Agent Brief']);
+  const k = byKey(s);
+  assert.deepEqual(k.criteria.items.map(i => [i.text, i.done, i.line]), [['Stable hostname', true, 12], ['Reviewer checks', false, 13]]);
+  assert.deepEqual(k.outOfScope.items, ['Assigning ports']);
+  assert.equal(k['Agent Brief'].body, '**Category:** enhancement\n**Summary:** Per-ticket hostnames.\n\n**Key interfaces:**\n- `names()`');
+});
+
+test('text above the first section is kept as an unlabelled intro; title and metadata are left out', () => {
+  const s = parseSections('# Q\n\nType: research\nStatus: claimed\nBlocked by: None\n\nWhy is it slow?\n\n- [ ] Find out\n');
+  assert.deepEqual(s.map(x => x.key), ['intro', 'criteria']);
+  assert.equal(s[0].label, null);
+  assert.equal(s[0].body, 'Why is it slow?');
+  assert.deepEqual(s[1].items.map(i => i.text), ['Find out']);
+});
+
+test('text after a bare checklist goes back where it was, and other text in known sections is kept', () => {
+  const md = '# Q\n\n**What to build:** A.\n\n- [ ] One\n\nMore about A.\n\n## Acceptance criteria\n\nAll of:\n\n- [x] Two\n\n## Out of scope\n\nNone\n';
+  const k = byKey(parseSections(md));
+  assert.equal(k.what.body, 'A.\n\nMore about A.');
+  assert.deepEqual(k.criteria.items.map(i => i.text), ['One', 'Two']);
+  assert.equal(k.criteria.body, 'All of:');
+  assert.deepEqual(k.outOfScope.items, []);
+  assert.equal(k.outOfScope.body, 'None');
+});
+
+test('headings and labels inside fenced code are text', () => {
+  const md = '# Q\n\n## Notes\n\n```\n## Fix\n**Cause:** x\n- [ ] not a criterion\n```\n';
+  const s = parseSections(md);
+  assert.deepEqual(s.map(x => x.key ?? x.label), ['Notes']);
+  assert.equal(s[0].body, '```\n## Fix\n**Cause:** x\n- [ ] not a criterion\n```');
+});
+
+test('headings match without case or a trailing colon, and a label can carry its text on the same line', () => {
+  const k = byKey(parseSections('# Q\n\n## acceptance Criteria:\n\n- [ ] A\n\n**Out of scope:** Everything else\n**Cause**: unknown\n'));
+  assert.deepEqual(k.criteria.items.map(i => i.text), ['A']);
+  assert.equal(k.outOfScope.body, 'Everything else');
+  assert.equal(k.cause.body, 'unknown');
+});
+
+test('parseTicket sends the sections along', () => {
+  assert.deepEqual(parseTicket(HEADINGS, '09-toast.md').sections, parseSections(HEADINGS));
+});
+
+test('no ticket text is lost', () => {
+  for (const md of [LABELS, HEADINGS, BRIEF]) {
+    const kept = parseSections(md).flatMap(s => [s.label, s.body, ...(s.items || []).map(i => i.text ?? i)]).join('\n');
+    const words = md.replace(/^# .*$/m, '').replace(/^\W*(Status|Type|Blocked by)\W.*$/gim, '')
+      .replace(/^#+ |\*\*|- \[[ x]\]|^- /gm, '').split(/\s+/).filter(Boolean);
+    for (const w of words) assert.ok(kept.includes(w.replace(/:$/, '')), `"${w}" is shown`);
+  }
 });

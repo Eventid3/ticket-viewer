@@ -597,6 +597,14 @@ function renderDrawer() {
   $('drawerTitle').textContent = t.title;
   renderCommands(t, a);
 
+  renderActions(t, a);
+  renderAgent();
+  renderTicket(t);
+  document.querySelectorAll('.card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+}
+
+// The Ticket section: its blockers, then its subsections as parseSections (lib/tickets.mjs) splits them.
+function renderTicket(t) {
   // The tickets this one is blocked by and blocks.
   const byNum = new Map(currentTickets().filter(o => o.feature === t.feature).map(o => [Number(o.number), o]));
   const link = n => {
@@ -607,14 +615,46 @@ function renderDrawer() {
       onclick: () => o && openTicket(o.id),
     }, `#${n}`);
   };
-  fill($('drawerLinks'),
+  const blocker = t.openBlockers.length === 1 ? byNum.get(Number(t.openBlockers[0])) : null;
+  fill($('drawerTicket'),
+    el('div', { class: 'ticket-head' },
+      el('h3', {}, 'Ticket'),
+      el('span', { class: 'spacer' }),
+      btn('Copy issue path', { class: 'btn ghost', title: `Copy "${t.absPath}"` }, () => copy(t.absPath, 'issue path'))),
+    t.blocked ? el('div', { class: 'blocked-note' },
+      `Blocked by ${t.openBlockers.map(n => `#${n}`).join(', ')}${blocker ? ` · ${blocker.title}` : ''}`) : null,
     t.blockedBy.length || t.blocks.length ? el('div', { class: 'links-row' },
       t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
-      t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null);
-  renderActions(t, a);
-  renderAgent();
-  $('drawerBody').innerHTML = renderMarkdown(t.body);
-  document.querySelectorAll('.card.selected').forEach(c => c.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+      t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null,
+    t.sections.map(renderSection));
+}
+
+function renderSection(s) {
+  const markdown = (md, cls = '') => {
+    const div = el('div', { class: `ticket-text markdown ${cls}` });
+    div.innerHTML = renderMarkdown(md);
+    return md ? div : null;
+  };
+  const html = (tag, attrs, md) => { const n = el(tag, attrs); n.innerHTML = inline(md); return n; };
+  const head = s.label ? el('div', { class: 'ticket-label' }, s.label) : null;
+  if (s.key === 'criteria') {
+    const done = s.items.filter(i => i.done).length;
+    return el('div', { class: 'ticket-sub criteria-list' },
+      s.items.length ? el('div', { class: 'criteria-head', title: `${done} of ${s.items.length} criteria checked` },
+        head,
+        el('span', { class: 'progress' }, el('span', { style: `width:${Math.round(100 * done / s.items.length)}%` })),
+        el('span', { class: 'progress-label' }, `${done}/${s.items.length}`)) : head,
+      s.items.map(i => el('div', { class: 'criterion' + (i.done ? ' done' : '') },
+        el('span', { class: 'checkbox', role: 'checkbox', 'aria-checked': String(i.done), 'aria-label': i.text }, i.done ? '✓' : ''),
+        html('span', { class: 'criterion-text' }, i.text))),
+      markdown(s.body));
+  }
+  if (s.key === 'outOfScope') {
+    return el('div', { class: 'ticket-sub' }, head,
+      s.items.map(i => html('div', { class: 'out-of-scope' }, i)),
+      markdown(s.body));
+  }
+  return el('div', { class: 'ticket-sub' }, head, markdown(s.body, s.key === 'cause' || s.key === 'fix' ? 'quiet' : ''));
 }
 
 // The header's Commands menu: copy commands and paths, or a /triage move, so the agent makes the move (and writes the brief).

@@ -176,7 +176,9 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
   position: sticky; top: 0; z-index: 3; background: var(--panel); padding: 18px 28px 16px;
   display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border);
 }
-.detail-body { padding: 24px 28px 48px; }
+.detail-body { padding: 24px 28px 48px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 32px 44px; }
+/* Agent, then Ticket: stacked in the drawer, side by side once the panel is wide enough. */
+.detail-body > .agent { flex: 1 1 440px; min-width: 0; margin: 0; }
 /* The meta items wrap between themselves, never inside one. */
 .detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 13px; color: var(--muted); }
 .meta-items { display: contents; }
@@ -212,10 +214,8 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .menu-divider { height: 1px; margin: 5px 4px; background: oklch(0.32 0.006 260); }
 .menu-label { padding: 4px 10px 3px; font-size: 11.5px; color: var(--muted); }
 
-.drawer-links { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
-.drawer-links:empty { display: none; }
-.links-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.drawer-links button.badge { cursor: pointer; font: inherit; line-height: inherit; margin: 0; }
+.links-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.links-row button.badge { cursor: pointer; font: inherit; line-height: inherit; margin: 0; }
 .icon-btn { background: none; border: 0; color: var(--muted); font-size: 16px; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
 .icon-btn:hover { background: var(--bg); color: var(--text); }
 
@@ -228,7 +228,7 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .markdown li { margin: 3px 0; }
 .markdown li.task { list-style: none; margin-left: -20px; }
 .markdown li.task input { margin-right: 6px; vertical-align: -1px; }
-.markdown code {
+.markdown code, .ticket-section code {
   font-size: .86em; padding: 1px 5px; border-radius: 4px; background: oklch(0.26 0.008 260); color: oklch(0.88 0.04 250); overflow-wrap: anywhere;
 }
 .markdown pre { background: var(--bg); padding: 10px 12px; border-radius: 6px; overflow-x: auto; }
@@ -238,6 +238,35 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .markdown th, .markdown td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
 .markdown a { color: var(--accent); }
 .markdown hr { border: 0; border-top: 1px solid var(--border); }
+
+/* The Ticket section: its subsections as parseSections (lib/tickets.mjs) splits them. */
+.ticket-section { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 20px; overflow-wrap: anywhere; }
+.ticket-head { display: flex; align-items: center; gap: 10px; }
+.ticket-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.ticket-head .spacer { flex: 1; }
+.btn.ghost { height: 26px; padding: 0 9px; font-size: 12px; background: transparent; border-color: var(--border-strong); color: oklch(0.75 0.008 260); }
+.blocked-note { font-size: 13.5px; color: oklch(0.82 0.12 80); }
+.ticket-section strong { font-weight: 600; }
+.ticket-sub { display: flex; flex-direction: column; gap: 6px; }
+.ticket-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.ticket-text { font-size: 14.5px; line-height: 1.65; text-wrap: pretty; }
+.ticket-text.quiet { color: oklch(0.86 0.005 260); }
+.ticket-text > :first-child { margin-top: 0; }
+.ticket-text > :last-child { margin-bottom: 0; }
+.criteria-list { gap: 4px; }
+.criteria-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.criteria-head .progress { flex: 1; max-width: 80px; width: auto; background: oklch(0.28 0.006 260); }
+.criteria-head .progress-label { font-size: 12px; color: oklch(0.62 0.008 260); }
+.criterion { display: flex; align-items: flex-start; gap: 11px; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; font-size: 14px; line-height: 1.5; }
+.criterion .checkbox {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 17px; height: 17px; margin-top: 2px;
+  border-radius: 4px; border: 1.5px solid oklch(0.45 0.008 260); color: oklch(0.17 0.02 150); font-size: 12px; font-weight: 700;
+}
+.criterion.done .checkbox { background: oklch(0.75 0.13 150); border-color: oklch(0.75 0.13 150); }
+.criterion-text { text-wrap: pretty; }
+.criterion.done .criterion-text { color: oklch(0.8 0.006 260); }
+.out-of-scope { position: relative; padding-left: 14px; font-size: 14px; line-height: 1.5; color: oklch(0.78 0.006 260); }
+.out-of-scope::before { content: "–"; position: absolute; left: 0; color: oklch(0.5 0.008 260); }
 
 /* Bottom left, so it never covers the drawer. */
 .toast {
