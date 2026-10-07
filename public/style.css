@@ -258,6 +258,9 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .criteria-head .progress { flex: 1; max-width: 80px; width: auto; background: oklch(0.28 0.006 260); }
 .criteria-head .progress-label { font-size: 12px; color: oklch(0.62 0.008 260); }
 .criterion { display: flex; align-items: flex-start; gap: 11px; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; font-size: 14px; line-height: 1.5; }
+.criterion { cursor: pointer; user-select: none; }
+.criterion:hover { background: oklch(0.215 0.006 260); }
+.criterion:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .criterion .checkbox {
   flex: none; display: flex; align-items: center; justify-content: center; width: 17px; height: 17px; margin-top: 2px;
   border-radius: 4px; border: 1.5px solid oklch(0.45 0.008 260); color: oklch(0.17 0.02 150); font-size: 12px; font-weight: 700;

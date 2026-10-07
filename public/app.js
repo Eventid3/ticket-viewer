@@ -142,6 +142,17 @@ async function moveTicket(t, to, notes) {
   return result;
 }
 
+// Ticks or unticks acceptance criterion `index` of ticket `t` in its file. The page flips it straight away and the
+// file watcher's reload confirms it; if the file changed under the page, the server refuses and the reload shows the file.
+async function tickCriterion(t, index, item) {
+  const expected = { text: item.text, done: item.done };
+  item.done = !item.done;
+  t.checks = { ...t.checks, done: t.checks.done + (item.done ? 1 : -1) };
+  render();
+  const result = await request('/api/criterion', { id: t.id, index, ...expected });
+  if (result.error) { toast(`Not ${expected.done ? 'unticked' : 'ticked'}: ${result.error}`); load(); }
+}
+
 const stoppedText = n => `Stopped ${plural(n, 'worktree process')}`;
 const stoppedNote = result => result.stopped ? ` · ${stoppedText(result.stopped)}` : '';
 
@@ -547,7 +558,10 @@ function keepDrawerView(draw) {
   const drawer = $('drawer');
   if (state.ticket && drawer.dataset.ticket === state.ticket) saveView(drawer);
   else drawerView = { open: {}, scroll: {} };
+  // The focused control (by its data-focus key) gets focus back once it's redrawn, so the keyboard keeps its place.
+  const focused = drawer.contains(document.activeElement) ? document.activeElement.dataset.focus : null;
   draw();
+  if (focused) drawer.querySelector(`[data-focus="${focused}"]`)?.focus();
   if (drawer.hidden) { delete drawer.dataset.ticket; return; }
   restoreView(drawer);
   drawer.dataset.ticket = state.ticket;
@@ -626,10 +640,10 @@ function renderTicket(t) {
     t.blockedBy.length || t.blocks.length ? el('div', { class: 'links-row' },
       t.blockedBy.length ? el('span', {}, 'Blocked by') : null, t.blockedBy.map(link),
       t.blocks.length ? el('span', {}, 'Blocks') : null, t.blocks.map(link)) : null,
-    t.sections.map(renderSection));
+    t.sections.map(s => renderSection(t, s)));
 }
 
-function renderSection(s) {
+function renderSection(t, s) {
   const markdownBlock = (md, cls = '') => {
     if (!md) return null;
     const div = el('div', { class: `ticket-text markdown ${cls}` });
@@ -645,8 +659,13 @@ function renderSection(s) {
         head,
         el('span', { class: 'progress' }, el('span', { style: `width:${Math.round(100 * done / s.items.length)}%` })),
         el('span', { class: 'progress-label' }, `${done}/${s.items.length}`)) : head,
-      s.items.map(i => el('div', { class: 'criterion' + (i.done ? ' done' : '') },
-        el('span', { class: 'checkbox', role: 'checkbox', 'aria-checked': String(i.done), 'aria-label': i.text }, i.done ? '✓' : ''),
+      s.items.map((i, n) => el('div', {
+        class: 'criterion' + (i.done ? ' done' : ''), role: 'checkbox', tabindex: '0', 'aria-checked': String(i.done),
+        'data-focus': `criterion-${n}`, title: i.done ? 'Untick' : 'Tick',
+        onclick: () => tickCriterion(t, n, i),
+        onkeydown: e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); tickCriterion(t, n, i); } },
+      },
+        el('span', { class: 'checkbox', 'aria-hidden': 'true' }, i.done ? '✓' : ''),
         inlineMarkdown('span', { class: 'criterion-text' }, i.text))),
       markdownBlock(s.body));
   }

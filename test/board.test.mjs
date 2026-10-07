@@ -357,3 +357,28 @@ test('requests under a name other than a loopback one are refused, so DNS rebind
   assert.equal(await statusFor(`localhost:${port}`), 200);
   assert.equal(await statusFor(`multi-project-01.dev.localhost:${port}`), 200);
 });
+
+test('POST /api/criterion ticks a criterion in the file, and refuses a stale one without writing', async t => {
+  let shop;
+  const s = await setup({ projects: [r => (shop = makeRepo(r, 'shop'))] });
+  t.after(() => s.board.close());
+  const file = path.join(shop, '.scratch', 'feat', 'issues', '01-a.md');
+  fs.writeFileSync(file, '# 01: A\n\nStatus: ready-for-agent\n\n- [ ] One\n- [ ] Two\n');
+
+  const res = await s.post('/api/criterion', { project: 'shop', id: 'feat/01-a.md', index: 1, text: 'Two', done: false });
+  assert.equal(res.status, 200);
+  assert.equal(fs.readFileSync(file, 'utf8'), '# 01: A\n\nStatus: ready-for-agent\n\n- [ ] One\n- [x] Two\n');
+  const ticket = (await s.get('/api/tickets?project=shop')).body.features[0].tickets[0];
+  assert.deepEqual(ticket.checks, { done: 1, total: 2 });
+
+  // Someone inserts a criterion above: the page's row 1 is now "One".
+  fs.writeFileSync(file, '# 01: A\n\nStatus: ready-for-agent\n\n- [ ] Zero\n- [ ] One\n- [x] Two\n');
+  const before = fs.readFileSync(file, 'utf8');
+  const stale = await s.post('/api/criterion', { project: 'shop', id: 'feat/01-a.md', index: 1, text: 'Two', done: true });
+  assert.equal(stale.status, 409);
+  assert.match(stale.body.error, /changed/);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+
+  assert.equal((await s.post('/api/criterion', { project: 'shop', id: 'feat/nope.md', index: 0, text: 'One', done: false })).status, 404);
+  assert.equal((await s.post('/api/criterion', { project: 'shop', id: 'feat/01-a.md', index: 'x', text: 'One', done: false })).status, 400);
+});
