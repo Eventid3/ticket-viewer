@@ -311,3 +311,52 @@ test('the Workspace table leaves out what the agent lacks and says when there is
   assert.deepEqual(workspaceRows({ branch: null }), [], 'no branch, no table');
   assert.deepEqual(workspaceRows(null), []);
 });
+
+test('clock times are HH:MM, with the day in front when it is not today', () => {
+  const { clockTime } = globalThis.TicketView;
+  const now = new Date(2026, 9, 7, 15, 0);
+  assert.equal(clockTime(new Date(2026, 9, 7, 9, 5).toISOString(), now), '09:05');
+  assert.equal(clockTime(new Date(2026, 9, 3, 14, 21).toISOString(), now), '3 Oct 14:21');
+  assert.equal(clockTime(null, now), '');
+  assert.equal(globalThis.TicketView.hhmm(new Date(2026, 9, 3, 14, 21).toISOString()), '14:21', 'feed rows: always just HH:MM');
+});
+
+test('durations: whole minutes for a finished run, seconds for a live one', () => {
+  const { duration } = globalThis.TicketView;
+  assert.equal(duration(45_000), '45s');
+  assert.equal(duration(9 * 60_000 + 40_000), '9m');
+  assert.equal(duration(65 * 60_000), '1h 5m');
+  assert.equal(duration(734_000, true), '12m 14s');
+  assert.equal(duration(4_000, true), '4s');
+  assert.equal(duration(3_723_000, true), '1h 2m 3s');
+  assert.equal(duration(-5_000, true), '0s', 'a clock a little ahead of the server never shows a negative time');
+});
+
+test('the Agent heading meta: finished time and run length when done, a live counter while running, the stop time when stopped', () => {
+  const { agentMeta } = globalThis.TicketView;
+  const at = (h, m, s = 0) => new Date(2026, 9, 7, h, m, s).toISOString();
+  const now = new Date(2026, 9, 7, 14, 30).getTime();
+  const d = { startedAt: at(14, 12), lastAt: at(14, 21, 30) };
+  assert.deepEqual(agentMeta({ state: 'done' }, d, now), { text: 'Finished 14:21 · ran 9m' });
+  assert.deepEqual(agentMeta({ state: 'idle' }, d, now), { text: 'Finished 14:21 · ran 9m' });
+  assert.deepEqual(agentMeta({ state: 'running' }, { ...d, startedAt: at(14, 17, 46) }, now), { text: 'for 12m 14s', since: at(14, 17, 46) });
+  assert.deepEqual(agentMeta({ state: 'waiting' }, d, now), { text: 'for 18m 0s', since: d.startedAt });
+  assert.deepEqual(agentMeta({ state: 'stopped', stoppedAt: at(14, 25) }, d, now), { text: 'Stopped 14:25' });
+  assert.equal(agentMeta({ state: 'stopped' }, d, now), null, 'unknown stop time');
+  assert.equal(agentMeta({ state: 'running' }, null, now), null, 'detail not loaded yet');
+  assert.deepEqual(agentMeta({ state: 'done' }, { startedAt: at(14, 22), lastAt: at(14, 21) }, now), { text: 'Finished 14:21' },
+    'no run length when the last item is from an earlier run');
+});
+
+const { changeBars } = globalThis.TicketView;
+
+test('change bars scale to the largest file, split green/red by its added and deleted lines', () => {
+  const files = [{ path: 'a', added: 30, deleted: 10 }, { path: 'b', added: 5, deleted: 5 }, { path: 'c', added: 0, deleted: 0 }];
+  assert.deepEqual(changeBars(files), [{ added: 37.5, deleted: 12.5 }, { added: 6.25, deleted: 6.25 }, { added: 0, deleted: 0 }]);
+});
+
+test('binary files get an empty bar and leave the scale alone; no counts at all leaves every bar empty', () => {
+  assert.deepEqual(changeBars([{ path: 'x.png', added: null, deleted: null }, { path: 'a', added: 0, deleted: 4 }]),
+    [{ added: 0, deleted: 0 }, { added: 0, deleted: 50 }]);
+  assert.deepEqual(changeBars([{ path: 'x.png', added: null, deleted: null }]), [{ added: 0, deleted: 0 }]);
+});
