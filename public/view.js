@@ -190,5 +190,21 @@
     };
   }
 
-  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage };
+  // The Agent section's Workspace table for agent `a`: one `{label, value, what}` row per thing it has, `what` naming
+  // the value in the "Copied …" toast. Merges into is always there, with `empty` text and its `why` when there's no
+  // reference branch.
+  // No branch, no table.
+  const NO_REF = 'The main checkout was on a detached HEAD, or the branch is gone: no merge-conflict check, and diffs start where the ticket started';
+  function workspaceRows(a) {
+    if (!a?.branch) return [];
+    const row = (label, value, what) => value ? [{ label, value, what }] : [];
+    return [
+      ...row('Branch', a.branch, 'branch'),
+      ...row('Preview', a.hostname, 'preview host'),
+      ...row('Worktree', a.worktree, 'worktree path'),
+      ...(a.ref ? row('Merges into', a.ref, 'reference branch') : [{ label: 'Merges into', empty: 'no reference branch', why: NO_REF }]),
+    ];
+  }
+
+  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, workspaceRows };
 })();

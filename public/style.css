@@ -328,10 +328,6 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .send-back-label { font-size: 13.5px; font-weight: 600; }
 .send-back-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .agent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-/* A fixed line height keeps the branch and hostname badges level with the error badge. */
-.agent-head .badge { line-height: 16px; white-space: normal; overflow-wrap: anywhere; }
-.agent-head button.badge { cursor: pointer; font: inherit; line-height: 16px; margin: 0; }
-.agent-head code { font-size: 11.5px; }
 .agent-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .muted { color: var(--muted); }
 /* Every agent-panel button has the same size; only the next step is .primary. */
@@ -370,20 +366,41 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .structure .badge.needs-you:hover, .structure .badge.needs-you:focus { white-space: normal; overflow-wrap: anywhere; }
 .flagged { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; }
 .error-text { color: var(--danger); overflow-wrap: anywhere; white-space: pre-wrap; }
-/* Worktree processes: a badge on the card in any lane, and a killable list in the agent panel. */
-.process-list { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
-.process-list .agent-head .btn { margin-left: auto; }
-.process-list ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.process-list li { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.process-list .command { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
-.process-list a.badge { color: var(--text); text-decoration: none; }
-.process-list a.badge:hover { border-color: var(--muted); }
-.merge-conflict { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--danger); border-radius: 6px; background: var(--danger-bg); }
-.merge-conflict strong { color: var(--danger); }
-.merge-conflict ul { margin: 0; padding-left: 18px; }
-.merge-conflict code { overflow-wrap: anywhere; }
-.merge-conflict.merging { border-color: var(--warn); background: var(--warn-bg); }
-.merge-conflict.merging strong { color: var(--warn); }
+/* Bordered blocks in the Agent section (worktree processes, merge conflicts): a header or warning row, then rows. */
+.block { border: 1px solid oklch(0.28 0.006 260); border-radius: 9px; background: oklch(0.175 0.005 260); overflow: hidden; }
+.block-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 14px; }
+.block-title { font-size: 13.5px; font-weight: 600; }
+.block-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 12.5px; }
+/* One amber line: a warning about the block below (or on its own, red, for the agent's error). */
+.warn-row { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 12.5px; color: oklch(0.8 0.11 70); background: oklch(0.2 0.02 70 / .35); }
+.warn-row.danger { border-radius: 9px; color: var(--danger); background: var(--danger-bg); }
+.warn-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.warn-row code { font-family: var(--mono); font-size: 12px; }
+.file-row { padding: 6px 14px; border-top: 1px solid oklch(0.25 0.006 260); font: 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Worktree processes: a badge on the card in any lane, and a killable table in the Agent section. */
+.process-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 14px; border-top: 1px solid oklch(0.25 0.006 260); }
+.process-row .command { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.process-row .pid { color: var(--muted); font: 12px var(--mono); white-space: nowrap; }
+.process-row .port { color: var(--muted); font: 12px var(--mono); }
+.port-link { flex: none; color: oklch(0.78 0.11 255); text-decoration: none; font-size: 12.5px; white-space: nowrap; }
+.port-link:hover { text-decoration: underline; }
+/* Workspace: branch, preview host, worktree and reference branch, each copied on click. */
+.workspace { display: flex; flex-direction: column; gap: 8px; }
+.workspace-heading { font-size: 13.5px; font-weight: 600; color: var(--text-2); }
+.workspace-heading .hint { font-weight: 400; color: oklch(0.58 0.008 260); }
+.workspace-table { display: grid; grid-template-columns: 96px minmax(0, 1fr); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.workspace-label, .workspace-value { padding: 8px 12px; border-top: 1px solid var(--border); }
+.workspace-label:first-child, .workspace-label:first-child + .workspace-value { border-top: 0; }
+.workspace-label { color: var(--muted); font-size: 12.5px; }
+.workspace-value {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+  font: 12.5px var(--mono); color: var(--text-2); background: none; border-left: 0; border-right: 0; border-bottom: 0; cursor: copy;
+}
+.workspace-value:hover { background: oklch(0.22 0.006 260); }
+.workspace-value:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.workspace-value.empty { cursor: default; color: var(--muted); font-family: inherit; font-size: 13px; }
+.workspace-value.empty:hover { background: none; }
 
 /* Project picker: unavailable projects are listed but can't be picked. */
 .topbar select option:disabled { color: var(--muted); }

@@ -287,3 +287,27 @@ test('an unindented line right below a report bullet continues it', () => {
     summary: 'S.', items: [{ label: 'Change', text: 'foo\nbar' }], rest: 'After.',
   });
 });
+
+const { workspaceRows } = globalThis.TicketView;
+
+test('the Workspace table lists branch, preview host, worktree and reference branch, each with what a copy toasts', () => {
+  const a = { branch: 'ticket/f/09-x', hostname: 'f-09.dev.localhost', worktree: '/r/.claude/worktrees/f-09', ref: 'main' };
+  assert.deepEqual(workspaceRows(a), [
+    { label: 'Branch', value: 'ticket/f/09-x', what: 'branch' },
+    { label: 'Preview', value: 'f-09.dev.localhost', what: 'preview host' },
+    { label: 'Worktree', value: '/r/.claude/worktrees/f-09', what: 'worktree path' },
+    { label: 'Merges into', value: 'main', what: 'reference branch' },
+  ]);
+});
+
+test('the Workspace table leaves out what the agent lacks and says when there is no reference branch', () => {
+  const [branch, ref, ...more] = workspaceRows({ branch: 'b', ref: null });
+  assert.deepEqual(branch, { label: 'Branch', value: 'b', what: 'branch' });
+  assert.equal(ref.label, 'Merges into');
+  assert.equal(ref.value, undefined, 'nothing to copy');
+  assert.equal(ref.empty, 'no reference branch');
+  assert.match(ref.why, /detached HEAD/);
+  assert.deepEqual(more, []);
+  assert.deepEqual(workspaceRows({ branch: null }), [], 'no branch, no table');
+  assert.deepEqual(workspaceRows(null), []);
+});

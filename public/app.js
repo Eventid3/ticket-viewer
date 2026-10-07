@@ -5,7 +5,7 @@ const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 
-const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage } = TicketView;
+const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, workspaceRows } = TicketView;
 const $ = id => document.getElementById(id);
 // layout: board or strip (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 const state = { layout: 'board', projects: null, project: null, lastProject: null, data: null, feature: null, ticket: null, query: '', emptyLanes: 'collapse', expandedLanes: [], unblockedOnly: false, detail: null, toAlerts: false, dragging: null, structure: null, notes: {}, commandsOpen: false };
@@ -256,7 +256,8 @@ function nextCommand(t) {
   return null;
 }
 
-async function copy(text, what) {
+// Toasts "Copied <what>: <text>", or just "Copied <what>" with `showText` false, for a value that's on screen already.
+async function copy(text, what, showText = true) {
   try {
     await navigator.clipboard.writeText(text);
   } catch {
@@ -268,16 +269,11 @@ async function copy(text, what) {
     ta.remove();
     if (!ok) { toast(`Could not copy ${what}`); return false; }
   }
-  toast(`Copied ${what}: ${text}`);
+  toast(showText ? `Copied ${what}: ${text}` : `Copied ${what}`);
   return true;
 }
 
 // ---- rendering --------------------------------------------------------------------------
-// A small button that copies `text`; its tooltip shows exactly what gets copied.
-function badgeButton(content, text, what) {
-  return el('button', { class: 'badge action', title: `Copy "${text}"`, onclick: () => copy(text, what) }, content);
-}
-
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -830,13 +826,9 @@ function renderAgent() {
       el('div', { class: 'pending-label' }, 'Waiting to run'),
       el('code', {}, pending),
       el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`)) : null,
-    el('div', { class: 'agent-head' },
-      badgeButton(el('code', {}, a.branch), a.branch, 'branch'),
-      a.hostname ? badgeButton(el('code', {}, a.hostname), a.hostname, 'agent hostname') : null,
-      a.error ? el('span', { class: 'badge blocked' }, a.error) : null),
+    a.error ? el('div', { class: 'warn-row danger' }, el('span', { class: 'warn-text' }, a.error)) : null,
     final ? renderReport(final, a.reviewNotes) : null,
     renderMerge(t, a),
-    a.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null,
     changes ? el('details', { class: 'changes', 'data-keep': 'changes', open: t.status === 'ready-for-review' },
       el('summary', {}, `${plural(changes.commits.length, 'commit')}${changes.dirty ? ' · uncommitted changes' : ''}`),
       changes.commits.length ? el('ul', { class: 'commits' }, changes.commits.map(c => el('li', {}, c))) : null,
@@ -844,7 +836,23 @@ function renderAgent() {
     t.status === 'ready-for-review' ? renderSendBack(t, a, d) : null,
     d?.items.length ? el('details', { class: 'activity', 'data-keep': 'activity', open: !!a.busy },
       el('summary', {}, `Agent activity · ${plural(d.items.length, 'step')}`),
-      el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null);
+      el('ol', { 'data-keep': 'activity-list', 'data-follow': true }, d.items.map(x => el('li', { class: x.kind }, x.text)))) : null,
+    renderWorkspace(a),
+    a.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null);
+}
+
+// The agent's branch, preview host, worktree and reference branch (workspaceRows in view.js); a click copies the value.
+function renderWorkspace(a) {
+  const rows = workspaceRows(a);
+  if (!rows.length) return null;
+  return el('div', { class: 'workspace' },
+    el('div', { class: 'workspace-heading' }, 'Workspace', el('span', { class: 'hint' }, ' · click to copy')),
+    el('div', { class: 'workspace-table' }, rows.flatMap(r => [
+      el('div', { class: 'workspace-label' }, r.label),
+      r.value
+        ? el('button', { class: 'workspace-value', type: 'button', title: `Copy "${r.value}"`, onclick: () => copy(r.value, r.what, false) }, r.value)
+        : el('div', { class: 'workspace-value empty', title: r.why }, r.empty),
+    ])));
 }
 
 // A ticket without an agent: why, and the one thing to do about it (Start agent only when the server offers it).
@@ -899,46 +907,46 @@ function renderSendBack(t, a, d) {
         el('span', { class: 'muted' }, 'The agent resumes on the same branch.'))));
 }
 
-// Where the ticket's work will be merged, and the files a test merge into it conflicts in;
-// or, while the worktree is mid-merge, how far resolving it has come and how to finish it.
+// The files a test merge of the ticket's branch into its reference branch conflicts in; or, while the worktree is
+// mid-merge, how far resolving it has come and how to finish it. Where the work merges into is in the Workspace table.
 function renderMerge(t, a) {
   if (!a.worktree) return null;
   if (a.merging) {
     const { finishMerge, abortMerge, reopenMeld } = t.actions;
-    const actions = el('div', { class: 'agent-actions' },
-      btn('✓ Finish merge', refused(finishMerge, { class: 'btn primary', title: 'git commit --no-edit in the worktree' }),
-        async () => { if (await api('/api/agent/merge/finish', { id: t.id })) toast(`${label(t)}: merge committed`); }),
-      btn('✕ Abort merge', refused(abortMerge, { title: 'git merge --abort: the branch and worktree go back to how they were before the merge' }),
-        async () => { if (await api('/api/agent/merge/abort', { id: t.id })) toast(`${label(t)}: merge aborted`); }),
-      btn('⇆ Reopen meld', refused(reopenMeld, { title: 'git mergetool --tool=meld on the files still unmerged' }),
-        () => api('/api/agent/merge/meld', { id: t.id })));
-    return el('div', { class: 'merge-conflict merging' },
-      el('div', {}, el('strong', {}, mergingText(a)), a.ref ? el('span', { class: 'muted' }, ' merging ', el('code', {}, a.ref)) : null),
-      actions);
+    return el('div', { class: 'block' },
+      el('div', { class: 'warn-row' },
+        el('span', { class: 'warn-text' }, mergingText(a), a.ref ? [' merging ', el('code', {}, a.ref)] : null)),
+      el('div', { class: 'block-actions' },
+        btn('✓ Finish merge', refused(finishMerge, { class: 'btn primary', title: 'git commit --no-edit in the worktree' }),
+          async () => { if (await api('/api/agent/merge/finish', { id: t.id })) toast(`${label(t)}: merge committed`); }),
+        btn('✕ Abort merge', refused(abortMerge, { title: 'git merge --abort: the branch and worktree go back to how they were before the merge' }),
+          async () => { if (await api('/api/agent/merge/abort', { id: t.id })) toast(`${label(t)}: merge aborted`); }),
+        btn('⇆ Reopen meld', refused(reopenMeld, { title: 'git mergetool --tool=meld on the files still unmerged' }),
+          () => api('/api/agent/merge/meld', { id: t.id }))));
   }
-  if (!a.ref) return el('div', { class: 'muted merge-target', title: 'The main checkout was on a detached HEAD, or the branch is gone: no merge-conflict check, and diffs start where the ticket started' }, 'no reference branch');
-  if (!a.conflict) return el('div', { class: 'muted merge-target' }, 'Merges into ', el('code', {}, a.ref));
-  return el('div', { class: 'merge-conflict' },
-    el('div', {}, el('strong', {}, `⚔ Merge conflict with `), el('code', {}, a.ref), el('span', { class: 'muted' }, ` in ${plural(a.conflict.files.length, 'file')}`)),
-    el('ul', {}, a.conflict.files.map(f => el('li', {}, el('code', {}, f)))));
+  if (!a.ref || !a.conflict) return null;
+  return el('div', { class: 'block' },
+    el('div', { class: 'warn-row' },
+      el('span', { class: 'warn-text' }, `⚔ Conflicts in ${plural(a.conflict.files.length, 'file')} with `, el('code', {}, a.ref))),
+    a.conflict.files.map(f => el('div', { class: 'file-row', title: f }, f)));
 }
 
 // Processes running in the ticket's worktree (servers, watchers, shells), each killable with its process group.
 // A listening port opens the app at the agent hostname, once the board knows whether the port speaks TLS.
 function renderProcesses(t, procs, hostname) {
-  const short = s => s.length > 80 ? s.slice(0, 77) + '…' : s;
-  return el('div', { class: 'process-list' },
-    el('div', { class: 'agent-head' },
-      el('strong', {}, 'Worktree processes'),
+  return el('div', { class: 'block' },
+    el('div', { class: 'block-head' },
+      el('span', { class: 'block-title' }, 'Worktree processes'),
       el('span', { class: 'muted' }, plural(procs.length, 'process')),
-      btn('✕ Kill all', { title: 'Stop every process running in the worktree (SIGTERM, then SIGKILL after 5 s)' }, () => killProcesses(t))),
-    el('ul', {}, procs.map(p => el('li', {},
-      el('code', { class: 'command', title: p.command }, short(p.command)),
+      el('span', { class: 'spacer' }),
+      btn('✕ Kill all', { class: 'btn sm', title: 'Stop every process running in the worktree (SIGTERM, then SIGKILL after 5 s)' }, () => killProcesses(t))),
+    procs.map(p => el('div', { class: 'process-row' },
+      el('code', { class: 'command', title: p.command }, p.command),
       p.ports.map(({ port, scheme }) => scheme && hostname
-        ? el('a', { class: 'badge action', href: `${scheme}://${hostname}:${port}`, target: '_blank', rel: 'noopener', title: `Open the app at ${scheme}://${hostname}:${port}` }, `↗ Open app :${port}`)
-        : el('span', { class: 'badge', title: `Listening on port ${port}${scheme ? '' : ' (checking for TLS)'}` }, `:${port}`)),
-      el('span', { class: 'muted' }, `pid ${p.pid}`),
-      btn('Kill', { title: `Stop process group ${p.pgid} (SIGTERM, then SIGKILL after 5 s)` }, () => killProcesses(t, p.pid))))));
+        ? el('a', { class: 'port-link', href: `${scheme}://${hostname}:${port}`, target: '_blank', rel: 'noopener', title: `Open the app at ${scheme}://${hostname}:${port}` }, `↗ Open app :${port}`)
+        : el('span', { class: 'port', title: `Listening on port ${port}${scheme ? '' : ' (checking for TLS)'}` }, `:${port}`)),
+      el('span', { class: 'pid' }, `pid ${p.pid}`),
+      btn('Kill', { class: 'btn sm', title: `Stop process group ${p.pgid} (SIGTERM, then SIGKILL after 5 s)` }, () => killProcesses(t, p.pid)))));
 }
 
 // The review panel's codemap section: counts per review-list group, flagged entries, and copying their notes.
