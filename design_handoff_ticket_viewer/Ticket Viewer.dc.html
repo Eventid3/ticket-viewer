@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet"><style>*{box-sizing:border-box}html,body{margin:0;height:100%;background:oklch(0.165 0.005 260);color:oklch(0.93 0.004 260);font-family:Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased}a{color:oklch(0.75 0.12 255)}a:hover{color:oklch(0.85 0.1 255)}@keyframes tvpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.75)}}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:oklch(0.3 0.006 260);border-radius:6px;border:2px solid transparent;background-clip:padding-box}::-webkit-scrollbar-track{background:transparent}textarea::placeholder,input::placeholder{color:oklch(0.55 0.008 260)}</style></helmet>
+<div style="height:100vh;display:flex;flex-direction:column;font-size:14px;color-scheme:dark;background:oklch(0.165 0.005 260)">
+  <header style="flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;height:54px;border-bottom:1px solid oklch(0.26 0.006 260);background:oklch(0.185 0.005 260);overflow-x:auto">
+    <div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;padding-right:6px;white-space:nowrap">Tickets</div>
+    <select style="height:32px;padding:0 8px;border-radius:6px;border:1px solid oklch(0.3 0.006 260);background:oklch(0.21 0.006 260);color:oklch(0.93 0.004 260);font:inherit;font-size:13px"><option>ticket-viewer</option><option>multi-project</option></select>
+    <select style="height:32px;padding:0 8px;border-radius:6px;border:1px solid oklch(0.3 0.006 260);background:oklch(0.21 0.006 260);color:oklch(0.93 0.004 260);font:inherit;font-size:13px"><option>ui-polish · 10</option><option>agent-sessions · 4</option></select>
+    <input value="{{ q }}" onChange="{{ onQ }}" placeholder="Filter by number, title, text" style="height:32px;flex:0 1 280px;min-width:150px;padding:0 10px;border-radius:6px;border:1px solid oklch(0.3 0.006 260);background:oklch(0.21 0.006 260);color:oklch(0.93 0.004 260);font:inherit;font-size:13px;outline:none">
+    <button onClick="{{ toggleUb }}" style="height:32px;padding:0 11px;border-radius:6px;border:1px solid {{ ubBd }};background:{{ ubBg }};color:{{ ubFg }};font:inherit;font-size:13px;cursor:pointer;white-space:nowrap">Unblocked only</button>
+    <sc-if value="{{ hasLanes }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:oklch(0.65 0.008 260);white-space:nowrap">
+        <span>Empty lanes</span>
+        <div style="display:flex;padding:2px;border-radius:7px;background:oklch(0.21 0.006 260);border:1px solid oklch(0.28 0.006 260)">
+          <sc-for list="{{ emptyOpts }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.on }}" style="height:26px;padding:0 9px;border:0;border-radius:5px;background:{{ o.bg }};color:{{ o.fg }};font:inherit;font-size:12.5px;cursor:pointer">{{ o.label }}</button></sc-for>
+        </div>
+      </div>
+    </sc-if>
+    <div style="flex:1"></div>
+    <div style="display:flex;gap:14px;font-size:13px;color:oklch(0.8 0.006 260);white-space:nowrap">
+      <span style="display:inline-flex;align-items:center;gap:7px">{{ runDot }}{{ nRunning }} running</span>
+      <span style="display:inline-flex;align-items:center;gap:7px"><span style="width:7px;height:7px;border-radius:50%;background:oklch(0.74 0.14 50)"></span>{{ nReview }} to review</span>
+    </div>
+    <div style="display:flex;padding:2px;border-radius:7px;background:oklch(0.21 0.006 260);border:1px solid oklch(0.28 0.006 260);margin-left:6px">
+      <sc-for list="{{ layoutOpts }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.on }}" title="{{ o.title }}" style="height:28px;padding:0 11px;border:0;border-radius:5px;background:{{ o.bg }};color:{{ o.fg }};font:inherit;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap">{{ o.label }}</button></sc-for>
+    </div>
+  </header>
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:{{ mainDir }}">
+    <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:1;min-width:0;overflow:auto;padding:16px;display:flex;gap:12px;align-items:stretch">
+        <sc-for list="{{ lanes }}" as="l" hint-placeholder-count="5">
+          <sc-if value="{{ l.strip }}">
+            <button onClick="{{ l.onToggle }}" title="Expand lane" style="flex:0 0 36px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px 0;border-radius:8px;border:1px solid oklch(0.24 0.006 260);background:oklch(0.18 0.005 260);color:oklch(0.65 0.008 260);cursor:pointer;font:inherit" style-hover="background:oklch(0.21 0.006 260)">
+              <span style="width:7px;height:7px;border-radius:50%;background:{{ l.color }}"></span>
+              <span style="writing-mode:vertical-rl;font-size:12.5px;white-space:nowrap">{{ l.id }}</span>
+            </button>
+          </sc-if>
+          <sc-if value="{{ l.full }}">
+            <div style="flex:0 0 276px;display:flex;flex-direction:column;gap:8px;min-height:0">
+              <div style="display:flex;align-items:center;gap:8px;padding:2px 4px;height:28px;font-size:13px;font-weight:600">
+                <span style="width:8px;height:8px;border-radius:50%;background:{{ l.color }}"></span>
+                <span>{{ l.id }}</span>
+                <span style="color:oklch(0.62 0.008 260);font-weight:500;font-family:'Geist Mono',ui-monospace,monospace;font-size:12px">{{ l.count }}</span>
+                <div style="flex:1"></div>
+                <sc-if value="{{ l.canCollapse }}"><button onClick="{{ l.onToggle }}" style="height:24px;padding:0 8px;border:0;border-radius:5px;background:transparent;color:oklch(0.62 0.008 260);font:inherit;font-size:12px;cursor:pointer">Collapse</button></sc-if>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;min-height:0;padding-bottom:8px">
+                <sc-for list="{{ l.cards }}" as="c" hint-placeholder-count="2">
+                  <div onClick="{{ c.onClick }}" style="padding:11px 12px 10px;border-radius:8px;background:{{ c.bg }};border:1px solid {{ c.bd }};display:flex;flex-direction:column;gap:7px;cursor:pointer;opacity:{{ c.op }}" style-hover="border-color:oklch(0.4 0.01 260)">
+                    <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:oklch(0.64 0.008 260)">
+                      <span style="font-family:'Geist Mono',ui-monospace,monospace">#{{ c.num }}</span><span>{{ c.type }}</span>
+                      <sc-if value="{{ c.blocked }}"><span style="color:oklch(0.8 0.13 80)">blocked by #{{ c.blockedBy }}</span></sc-if>
+                    </div>
+                    <div style="font-size:14px;font-weight:500;line-height:1.35;text-wrap:pretty">{{ c.title }}</div>
+                    <sc-if value="{{ showExcerpt }}"><div style="font-size:12.5px;color:oklch(0.64 0.008 260);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.excerpt }}</div></sc-if>
+                    <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:oklch(0.78 0.006 260);min-height:18px">
+                      <sc-if value="{{ c.running }}"><span style="display:inline-flex;align-items:center;gap:6px;color:oklch(0.8 0.1 205)">{{ runDot }}Agent running</span></sc-if>
+                      <sc-if value="{{ c.aDone }}"><span style="color:oklch(0.78 0.13 150)">✓ Agent done</span></sc-if>
+                      <sc-if value="{{ c.stopped }}"><span style="color:oklch(0.8 0.12 25)">■ Agent stopped</span></sc-if>
+                      <sc-if value="{{ c.hasComments }}"><span style="color:oklch(0.64 0.008 260)">{{ c.comments }}</span></sc-if>
+                      <div style="flex:1"></div>
+                      <div style="width:44px;height:4px;border-radius:2px;background:oklch(0.3 0.006 260);overflow:hidden"><div style="height:100%;width:{{ c.pct }}%;background:oklch(0.72 0.13 150)"></div></div>
+                      <span style="font-family:'Geist Mono',ui-monospace,monospace;color:oklch(0.64 0.008 260)">{{ c.prog }}</span>
+                    </div>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ l.empty }}"><div style="padding:14px;border:1px dashed oklch(0.28 0.006 260);border-radius:8px;color:oklch(0.6 0.008 260);font-size:13px;text-align:center">No tickets</div></sc-if>
+              </div>
+            </div>
+          </sc-if>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isStrip }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:0 0 280px;min-height:0;overflow-x:auto;padding:12px 16px;display:flex;gap:10px;align-items:stretch">
+        <sc-for list="{{ lanes }}" as="l" hint-placeholder-count="5">
+          <sc-if value="{{ l.strip }}">
+            <button onClick="{{ l.onToggle }}" title="Expand lane" style="flex:0 0 34px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px 0;border-radius:8px;border:1px solid oklch(0.24 0.006 260);background:oklch(0.18 0.005 260);color:oklch(0.65 0.008 260);cursor:pointer;font:inherit">
+              <span style="width:7px;height:7px;border-radius:50%;background:{{ l.color }}"></span>
+              <span style="writing-mode:vertical-rl;font-size:12px;white-space:nowrap">{{ l.id }}</span>
+            </button>
+          </sc-if>
+          <sc-if value="{{ l.full }}">
+            <div style="flex:1 1 0;min-width:200px;display:flex;flex-direction:column;gap:6px;min-height:0;padding:8px;border-radius:9px;background:oklch(0.185 0.005 260);border:1px solid oklch(0.24 0.006 260)">
+              <div style="display:flex;align-items:center;gap:8px;padding:0 3px;font-size:12.5px;font-weight:600">
+                <span style="width:7px;height:7px;border-radius:50%;background:{{ l.color }}"></span><span>{{ l.id }}</span>
+                <span style="color:oklch(0.62 0.008 260);font-family:'Geist Mono',ui-monospace,monospace;font-size:11.5px;font-weight:500">{{ l.count }}</span>
+                <div style="flex:1"></div>
+                <sc-if value="{{ l.canCollapse }}"><button onClick="{{ l.onToggle }}" style="height:20px;padding:0 6px;border:0;background:transparent;color:oklch(0.62 0.008 260);font:inherit;font-size:11.5px;cursor:pointer">Collapse</button></sc-if>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px;overflow-y:auto;min-height:0">
+                <sc-for list="{{ l.cards }}" as="c" hint-placeholder-count="2">
+                  <div onClick="{{ c.onClick }}" title="{{ c.title }}" style="display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;background:{{ c.bg }};border:1px solid {{ c.bd }};cursor:pointer;font-size:13px;opacity:{{ c.op }}">
+                    <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:12px;color:oklch(0.62 0.008 260)">{{ c.num }}</span>
+                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.title }}</span>
+                    <sc-if value="{{ c.running }}">{{ runDot }}</sc-if>
+                    <sc-if value="{{ c.aDone }}"><span style="color:oklch(0.78 0.13 150);font-size:12px">✓</span></sc-if>
+                    <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11.5px;color:oklch(0.6 0.008 260)">{{ c.prog }}</span>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ l.empty }}"><div style="padding:8px;color:oklch(0.58 0.008 260);font-size:12.5px">No tickets</div></sc-if>
+              </div>
+            </div>
+          </sc-if>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:0 0 400px;min-height:0;overflow-y:auto;padding:12px 12px 24px;display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+          <div style="border-radius:9px;background:oklch(0.185 0.005 260);border:1px solid oklch(0.24 0.006 260);box-shadow:inset 0 2px 0 {{ g.color }};overflow:hidden">
+            <button onClick="{{ g.onToggle }}" style="width:100%;display:flex;align-items:center;gap:9px;padding:11px 12px;border:0;background:transparent;color:oklch(0.93 0.004 260);font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left" style-hover="background:oklch(0.205 0.006 260)">
+              <span style="width:12px;color:oklch(0.6 0.008 260);font-size:11px">{{ g.chev }}</span>
+              <span style="width:8px;height:8px;border-radius:50%;background:{{ g.color }}"></span>
+              <span>{{ g.id }}</span>
+              <span style="color:oklch(0.62 0.008 260);font-family:'Geist Mono',ui-monospace,monospace;font-size:12px;font-weight:500">{{ g.count }}</span>
+            </button>
+            <sc-if value="{{ g.open }}">
+              <div style="display:flex;flex-direction:column;padding:0 6px 6px;gap:2px">
+                <sc-for list="{{ g.rows }}" as="c" hint-placeholder-count="2">
+                  <div onClick="{{ c.onClick }}" style="display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:4px 8px;align-items:center;padding:9px 10px;border-radius:7px;background:{{ c.rowBg }};box-shadow:inset 2px 0 0 {{ c.rowBar }};cursor:pointer;opacity:{{ c.op }}" style-hover="background:oklch(0.215 0.006 260)">
+                    <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:12px;color:oklch(0.62 0.008 260)">#{{ c.num }}</span>
+                    <span style="font-size:14px;line-height:1.35;font-weight:500;text-wrap:pretty">{{ c.title }}</span>
+                    <span style="display:flex;align-items:center;gap:8px;font-size:12px;color:oklch(0.64 0.008 260);font-family:'Geist Mono',ui-monospace,monospace">
+                      <sc-if value="{{ c.running }}">{{ runDot }}</sc-if>
+                      <sc-if value="{{ c.aDone }}"><span style="color:oklch(0.78 0.13 150)">✓</span></sc-if>
+                      <sc-if value="{{ c.stopped }}"><span style="color:oklch(0.8 0.12 25)">■</span></sc-if>
+                      {{ c.prog }}
+                    </span>
+                    <sc-if value="{{ c.hasSub }}"><span></span><span style="grid-column:2 / 4;font-size:12px;color:oklch(0.64 0.008 260)">{{ c.sub }}</span></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showDetail }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:{{ dFlex }};min-width:0;min-height:0;overflow-y:auto;background:oklch(0.19 0.005 260);border-left:{{ dBL }};border-top:{{ dBT }}">
+        <sc-if value="{{ noSel }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%;display:flex;align-items:center;justify-content:center;color:oklch(0.6 0.008 260);font-size:14px">Select a ticket</div>
+        </sc-if>
+        <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ true }}">
+          <div style="position:sticky;top:0;z-index:3;padding:18px 28px 16px;display:flex;flex-direction:column;gap:10px;background:oklch(0.19 0.005 260);border-bottom:1px solid oklch(0.26 0.006 260)">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-size:13px;color:oklch(0.65 0.008 260);white-space:nowrap">
+              <span style="flex:none;font-family:'Geist Mono',ui-monospace,monospace;color:oklch(0.8 0.006 260)">#{{ d.num }}</span>
+              <span style="flex:none">{{ d.feature }}</span>
+              <span style="flex:none;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px 0 8px;border-radius:999px;border:1px solid {{ d.statusColor }};color:{{ d.statusColor }};font-size:12.5px;font-weight:500"><span style="width:7px;height:7px;border-radius:50%;background:{{ d.statusColor }}"></span>{{ d.status }}</span>
+              <span style="flex:none;white-space:nowrap;height:24px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;background:oklch(0.25 0.006 260);color:oklch(0.82 0.006 260);font-size:12.5px">{{ d.type }}</span>
+              <div style="flex:1"></div>
+              <div style="position:relative;flex:none">
+                <button onClick="{{ toggleMenu }}" style="white-space:nowrap;height:30px;padding:0 10px;border-radius:6px;border:1px solid oklch(0.3 0.006 260);background:oklch(0.23 0.006 260);color:oklch(0.88 0.004 260);font:inherit;font-size:13px;cursor:pointer">Commands ▾</button>
+                <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+                  <div style="position:absolute;right:0;top:36px;width:250px;padding:6px;border-radius:9px;background:oklch(0.23 0.006 260);border:1px solid oklch(0.32 0.006 260);box-shadow:0 12px 32px oklch(0 0 0 / 0.45);display:flex;flex-direction:column;gap:1px;z-index:5">
+                    <sc-for list="{{ menuItems }}" as="m" hint-placeholder-count="4"><button onClick="{{ m.on }}" style="display:flex;justify-content:space-between;align-items:center;height:32px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:oklch(0.9 0.004 260);font:inherit;font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.28 0.008 260)"><span>{{ m.label }}</span><span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11.5px;color:oklch(0.6 0.008 260)">{{ m.hint }}</span></button></sc-for>
+                    <div style="height:1px;background:oklch(0.3 0.006 260);margin:5px 4px"></div>
+                    <div style="padding:4px 10px 4px;font-size:12px;color:oklch(0.6 0.008 260)">Move to</div>
+                    <sc-for list="{{ moveItems }}" as="m" hint-placeholder-count="8"><button onClick="{{ m.on }}" style="display:flex;align-items:center;gap:9px;height:30px;padding:0 10px;border:0;border-radius:6px;background:{{ m.bg }};color:oklch(0.9 0.004 260);font:inherit;font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.28 0.008 260)"><span style="width:7px;height:7px;border-radius:50%;background:{{ m.color }}"></span>{{ m.label }}</button></sc-for>
+                  </div>
+                </sc-if>
+              </div>
+              <button onClick="{{ close }}" title="Close (Esc)" style="width:30px;height:30px;border-radius:6px;border:0;background:transparent;color:oklch(0.7 0.008 260);font-size:18px;cursor:pointer" style-hover="background:oklch(0.25 0.006 260)">×</button>
+            </div>
+            <h2 style="margin:0;font-size:22px;line-height:1.3;font-weight:600;letter-spacing:-0.01em;text-wrap:pretty">{{ d.title }}</h2>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+              <sc-for list="{{ d.actions }}" as="a" hint-placeholder-count="2"><button onClick="{{ a.on }}" style="height:34px;padding:0 14px;border-radius:7px;border:1px solid {{ a.bd }};background:{{ a.bg }};color:{{ a.fg }};font:inherit;font-size:13.5px;font-weight:500;cursor:pointer;white-space:nowrap">{{ a.label }}</button></sc-for>
+              <sc-if value="{{ d.hasNote }}"><span style="font-size:13px;color:oklch(0.65 0.008 260)">{{ d.note }}</span></sc-if>
+            </div>
+          </div>
+
+          <div style="padding:24px 28px 48px;display:flex;flex-wrap:wrap;gap:32px 44px;align-items:flex-start">
+            <section style="flex:1 1 440px;min-width:0;display:flex;flex-direction:column;gap:18px">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <h3 style="margin:0;font-size:16px;font-weight:600">{{ d.agentHeading }}</h3>
+                <sc-if value="{{ d.hasAgent }}"><span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:{{ d.agentColor }}">{{ d.agentIcon }}{{ d.agentLabel }}</span></sc-if>
+                <span style="font-size:13px;color:oklch(0.62 0.008 260)">{{ d.agentMeta }}</span>
+              </div>
+
+              <sc-if value="{{ d.isDone }}" hint-placeholder-val="{{ false }}">
+                <p style="margin:0;font-size:15px;line-height:1.65;color:oklch(0.93 0.004 260);text-wrap:pretty"><sc-for list="{{ d.summary }}" as="s"><sc-if value="{{ s.plain }}">{{ s.t }}</sc-if><sc-if value="{{ s.code }}"><code style="font-family:'Geist Mono',ui-monospace,monospace;font-size:.86em;padding:1px 5px;border-radius:4px;background:oklch(0.26 0.008 260);color:oklch(0.88 0.04 250);overflow-wrap:anywhere">{{ s.t }}</code></sc-if><sc-if value="{{ s.bold }}"><strong style="font-weight:600">{{ s.t }}</strong></sc-if></sc-for></p>
+                <sc-if value="{{ d.hasItems }}">
+                  <div style="display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px 16px;font-size:14px;line-height:1.6;padding:14px 0;border-top:1px solid oklch(0.26 0.006 260);border-bottom:1px solid oklch(0.26 0.006 260)">
+                    <sc-for list="{{ d.items }}" as="it" hint-placeholder-count="3">
+                      <div style="color:oklch(0.65 0.008 260);font-weight:500">{{ it.k }}</div>
+                      <div style="color:oklch(0.86 0.005 260);text-wrap:pretty"><sc-for list="{{ it.segs }}" as="s"><sc-if value="{{ s.plain }}">{{ s.t }}</sc-if><sc-if value="{{ s.code }}"><code style="font-family:'Geist Mono',ui-monospace,monospace;font-size:.86em;padding:1px 5px;border-radius:4px;background:oklch(0.26 0.008 260);color:oklch(0.88 0.04 250);overflow-wrap:anywhere">{{ s.t }}</code></sc-if><sc-if value="{{ s.bold }}"><strong style="font-weight:600;color:oklch(0.95 0.004 260)">{{ s.t }}</strong></sc-if></sc-for></div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <div style="border:1px solid oklch(0.28 0.006 260);border-radius:9px;overflow:hidden;background:oklch(0.175 0.005 260)">
+                  <div style="display:flex;align-items:center;gap:10px;padding:10px 12px 10px 14px;border-bottom:1px solid oklch(0.26 0.006 260);flex-wrap:wrap">
+                    <span style="font-size:13.5px;font-weight:600">Changes</span>
+                    <span style="font-size:13px;color:oklch(0.65 0.008 260)">{{ d.changeSummary }}</span>
+                    <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:12.5px"><span style="color:oklch(0.76 0.13 150)">+{{ d.adds }}</span> <span style="color:oklch(0.72 0.14 25)">−{{ d.dels }}</span></span>
+                    <div style="flex:1"></div>
+                    <button onClick="{{ d.onMeld }}" style="height:28px;padding:0 10px;border-radius:6px;border:1px solid oklch(0.32 0.006 260);background:oklch(0.23 0.006 260);color:oklch(0.9 0.004 260);font:inherit;font-size:12.5px;cursor:pointer">Open diff in meld</button>
+                    <button onClick="{{ d.onStruct }}" style="height:28px;padding:0 10px;border-radius:6px;border:1px solid oklch(0.32 0.006 260);background:oklch(0.23 0.006 260);color:oklch(0.9 0.004 260);font:inherit;font-size:12.5px;cursor:pointer">Structure diff</button>
+                  </div>
+                  <sc-for list="{{ d.commits }}" as="cm" hint-placeholder-count="1">
+                    <div style="display:flex;gap:12px;padding:9px 14px;font-size:13px;line-height:1.5;border-bottom:1px solid oklch(0.24 0.006 260)">
+                      <span style="font-family:'Geist Mono',ui-monospace,monospace;color:oklch(0.78 0.11 255);flex:none">{{ cm.sha }}</span>
+                      <span style="color:oklch(0.88 0.005 260);text-wrap:pretty">{{ cm.msg }}</span>
+                    </div>
+                  </sc-for>
+                  <sc-for list="{{ d.files }}" as="f" hint-placeholder-count="1">
+                    <div style="display:flex;align-items:center;gap:12px;padding:7px 14px;font-family:'Geist Mono',ui-monospace,monospace;font-size:12.5px">
+                      <span style="flex:1;min-width:0;color:oklch(0.82 0.005 260);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.p }}</span>
+                      <span style="color:oklch(0.76 0.13 150)">+{{ f.a }}</span><span style="color:oklch(0.72 0.14 25);width:34px">−{{ f.d }}</span>
+                      <span style="display:flex;width:50px;height:6px;border-radius:2px;overflow:hidden;background:oklch(0.27 0.006 260)"><span style="width:{{ f.ap }}%;background:oklch(0.7 0.13 150)"></span><span style="width:{{ f.dp }}%;background:oklch(0.66 0.14 25)"></span></span>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ d.hasWarning }}">
+                    <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid oklch(0.24 0.006 260);font-size:12.5px;color:oklch(0.8 0.11 70);background:oklch(0.2 0.02 70 / 0.35)">
+                      <span style="flex:1;min-width:0">{{ d.warning }}</span>
+                      <button onClick="{{ d.onStruct }}" style="height:24px;padding:0 8px;border-radius:5px;border:1px solid oklch(0.4 0.06 70);background:transparent;color:oklch(0.85 0.1 70);font:inherit;font-size:12px;cursor:pointer">Retry</button>
+                    </div>
+                  </sc-if>
+                </div>
+
+                <sc-if value="{{ d.isReview }}">
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <label style="font-size:13.5px;font-weight:600">Send back with notes</label>
+                    <textarea value="{{ notes }}" onChange="{{ onNotes }}" rows="3" placeholder="Notes go to the agent's session and are added to the ticket's ## Comments" style="width:100%;resize:vertical;padding:10px 12px;border-radius:8px;border:1px solid oklch(0.3 0.006 260);background:oklch(0.17 0.005 260);color:oklch(0.93 0.004 260);font:inherit;font-size:14px;line-height:1.5;outline:none"></textarea>
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <button onClick="{{ sendBack }}" style="height:32px;padding:0 13px;border-radius:7px;border:1px solid oklch(0.32 0.006 260);background:oklch(0.245 0.006 260);color:oklch(0.93 0.004 260);font:inherit;font-size:13px;font-weight:500;cursor:pointer">↩ Send back to agent</button>
+                      <span style="font-size:12.5px;color:oklch(0.6 0.008 260)">The agent resumes on the same branch.</span>
+                    </div>
+                  </div>
+                </sc-if>
+              </sc-if>
+
+              <sc-if value="{{ d.hasFeed }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <sc-if value="{{ d.isDone }}"><button onClick="{{ toggleAct }}" style="align-self:flex-start;padding:0;border:0;background:transparent;color:oklch(0.75 0.008 260);font:inherit;font-size:13.5px;font-weight:500;cursor:pointer">{{ d.actChev }} Agent activity · {{ d.feedCount }} steps</button></sc-if>
+                  <sc-if value="{{ d.feedOpen }}">
+                    <div style="border:1px solid oklch(0.28 0.006 260);border-radius:9px;background:oklch(0.17 0.005 260);padding:6px 0">
+                      <sc-for list="{{ d.feed }}" as="r" hint-placeholder-count="4">
+                        <div style="display:grid;grid-template-columns:52px 16px minmax(0,1fr);align-items:baseline;padding:5px 14px;font-size:13px;line-height:1.5">
+                          <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:12px;color:oklch(0.55 0.008 260)">{{ r.at }}</span>
+                          <span>{{ r.mark }}</span>
+                          <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:12.5px;color:{{ r.fg }};overflow-wrap:anywhere">{{ r.text }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ d.isNone }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:22px;border:1px dashed oklch(0.3 0.006 260);border-radius:9px;display:flex;flex-direction:column;gap:12px;align-items:flex-start">
+                  <div style="font-size:14px;color:oklch(0.78 0.006 260);line-height:1.5">{{ d.noneText }}</div>
+                  <div style="display:flex;gap:8px">
+                    <sc-for list="{{ d.noneActions }}" as="a" hint-placeholder-count="1"><button onClick="{{ a.on }}" style="height:32px;padding:0 13px;border-radius:7px;border:1px solid {{ a.bd }};background:{{ a.bg }};color:{{ a.fg }};font:inherit;font-size:13px;font-weight:500;cursor:pointer">{{ a.label }}</button></sc-for>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ d.hasWorkspace }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <div style="font-size:13.5px;font-weight:600;color:oklch(0.8 0.006 260)">Workspace <span style="font-weight:400;color:oklch(0.58 0.008 260)">· click to copy</span></div>
+                  <div style="display:grid;grid-template-columns:96px minmax(0,1fr);border:1px solid oklch(0.26 0.006 260);border-radius:9px;overflow:hidden">
+                    <sc-for list="{{ d.workspace }}" as="w" hint-placeholder-count="4">
+                      <div style="padding:8px 12px;font-size:12.5px;color:oklch(0.62 0.008 260);border-bottom:1px solid oklch(0.24 0.006 260)">{{ w.k }}</div>
+                      <div onClick="{{ w.on }}" title="Copy" style="padding:8px 12px;font-family:'Geist Mono',ui-monospace,monospace;font-size:12.5px;color:oklch(0.86 0.005 260);border-bottom:1px solid oklch(0.24 0.006 260);cursor:copy;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" style-hover="background:oklch(0.22 0.006 260)">{{ w.v }}</div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </section>
+
+            <section style="flex:1 1 340px;min-width:0;display:flex;flex-direction:column;gap:20px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <h3 style="margin:0;font-size:16px;font-weight:600">Ticket</h3>
+                <div style="flex:1"></div>
+                <button onClick="{{ d.onCopyIssue }}" style="height:26px;padding:0 9px;border-radius:6px;border:1px solid oklch(0.3 0.006 260);background:transparent;color:oklch(0.75 0.008 260);font:inherit;font-size:12px;cursor:pointer">Copy issue path</button>
+              </div>
+              <sc-if value="{{ d.hasBlocked }}"><div style="font-size:13.5px;color:oklch(0.82 0.12 80)">Blocked by #{{ d.blockedBy }} · {{ d.blockedTitle }}</div></sc-if>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:13px;font-weight:600;color:oklch(0.65 0.008 260)">What to build</div>
+                <p style="margin:0;font-size:14.5px;line-height:1.65;text-wrap:pretty"><sc-for list="{{ d.what }}" as="s"><sc-if value="{{ s.plain }}">{{ s.t }}</sc-if><sc-if value="{{ s.code }}"><code style="font-family:'Geist Mono',ui-monospace,monospace;font-size:.86em;padding:1px 5px;border-radius:4px;background:oklch(0.26 0.008 260);color:oklch(0.88 0.04 250)">{{ s.t }}</code></sc-if><sc-if value="{{ s.bold }}"><strong style="font-weight:600">{{ s.t }}</strong></sc-if></sc-for></p>
+              </div>
+              <sc-if value="{{ d.hasCause }}">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <div style="font-size:13px;font-weight:600;color:oklch(0.65 0.008 260)">Cause</div>
+                  <p style="margin:0;font-size:14.5px;line-height:1.65;color:oklch(0.86 0.005 260);text-wrap:pretty"><sc-for list="{{ d.cause }}" as="s"><sc-if value="{{ s.plain }}">{{ s.t }}</sc-if><sc-if value="{{ s.code }}"><code style="font-family:'Geist Mono',ui-monospace,monospace;font-size:.86em;padding:1px 5px;border-radius:4px;background:oklch(0.26 0.008 260);color:oklch(0.88 0.04 250)">{{ s.t }}</code></sc-if><sc-if value="{{ s.bold }}"><strong style="font-weight:600">{{ s.t }}</strong></sc-if></sc-for></p>
+                </div>
+              </sc-if>
+              <sc-if value="{{ d.hasFix }}">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <div style="font-size:13px;font-weight:600;color:oklch(0.65 0.008 260)">Fix</div>
+                  <p style="margin:0;font-size:14.5px;line-height:1.65;color:oklch(0.86 0.005 260);text-wrap:pretty"><sc-for list="{{ d.fix }}" as="s"><sc-if value="{{ s.plain }}">{{ s.t }}</sc-if><sc-if value="{{ s.code }}"><code style="font-family:'Geist Mono',ui-monospace,monospace;font-size:.86em;padding:1px 5px;border-radius:4px;background:oklch(0.26 0.008 260);color:oklch(0.88 0.04 250)">{{ s.t }}</code></sc-if><sc-if value="{{ s.bold }}"><strong style="font-weight:600">{{ s.t }}</strong></sc-if></sc-for></p>
+                </div>
+              </sc-if>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                  <div style="font-size:13px;font-weight:600;color:oklch(0.65 0.008 260)">Acceptance criteria</div>
+                  <div style="flex:1;max-width:80px;height:4px;border-radius:2px;background:oklch(0.28 0.006 260);overflow:hidden"><div style="height:100%;width:{{ d.critPct }}%;background:oklch(0.72 0.13 150)"></div></div>
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:12px;color:oklch(0.62 0.008 260)">{{ d.critText }}</span>
+                </div>
+                <sc-for list="{{ d.criteria }}" as="c" hint-placeholder-count="3">
+                  <div onClick="{{ c.on }}" style="display:flex;gap:11px;align-items:flex-start;padding:6px 8px;margin:0 -8px;border-radius:6px;cursor:pointer;font-size:14px;line-height:1.5" style-hover="background:oklch(0.215 0.006 260)">
+                    <span style="flex:none;width:17px;height:17px;margin-top:2px;border-radius:4px;border:1.5px solid {{ c.boxBd }};background:{{ c.boxBg }};color:oklch(0.17 0.02 150);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ c.mark }}</span>
+                    <span style="color:{{ c.fg }};text-wrap:pretty"><sc-for list="{{ c.segs }}" as="s"><sc-if value="{{ s.plain }}">{{ s.t }}</sc-if><sc-if value="{{ s.code }}"><code style="font-family:'Geist Mono',ui-monospace,monospace;font-size:.86em;padding:1px 5px;border-radius:4px;background:oklch(0.26 0.008 260);color:oklch(0.88 0.04 250)">{{ s.t }}</code></sc-if><sc-if value="{{ s.bold }}"><strong style="font-weight:600">{{ s.t }}</strong></sc-if></sc-for></span>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ d.hasOos }}">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <div style="font-size:13px;font-weight:600;color:oklch(0.65 0.008 260)">Out of scope</div>
+                  <sc-for list="{{ d.oos }}" as="o" hint-placeholder-count="2"><div style="font-size:14px;line-height:1.5;color:oklch(0.78 0.006 260);padding-left:14px;position:relative"><span style="position:absolute;left:0;color:oklch(0.5 0.008 260)">–</span>{{ o }}</div></sc-for>
+                </div>
+              </sc-if>
+            </section>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;left:16px;bottom:16px;z-index:20;padding:10px 14px;border-radius:8px;background:oklch(0.28 0.008 260);border:1px solid oklch(0.36 0.008 260);box-shadow:0 10px 30px oklch(0 0 0 / 0.4);font-size:13.5px;color:oklch(0.95 0.004 260)">{{ toast }}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;layout&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;board&quot;,&quot;strip&quot;,&quot;list&quot;],&quot;default&quot;:&quot;board&quot;,&quot;tsType&quot;:&quot;'board'|'strip'|'list'&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;comfortable&quot;,&quot;compact&quot;],&quot;default&quot;:&quot;comfortable&quot;,&quot;tsType&quot;:&quot;'comfortable'|'compact'&quot;,&quot;section&quot;:&quot;Cards&quot;},&quot;emptyLanes&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;show&quot;,&quot;collapse&quot;,&quot;hide&quot;],&quot;default&quot;:&quot;collapse&quot;,&quot;tsType&quot;:&quot;'show'|'collapse'|'hide'&quot;,&quot;section&quot;:&quot;Cards&quot;}}">
+const ST=[['needs-triage','oklch(0.7 0.015 260)'],['needs-info','oklch(0.8 0.13 80)'],['ready-for-agent','oklch(0.72 0.13 255)'],['ready-for-human','oklch(0.72 0.13 305)'],['claimed','oklch(0.76 0.11 205)'],['ready-for-review','oklch(0.74 0.14 50)'],['resolved','oklch(0.75 0.13 150)'],['wontfix','oklch(0.6 0.01 260)']].map(([id,c])=>({id,c}));
+const COLOR=Object.fromEntries(ST.map(s=>[s.id,s.c]));
+const ATTN=['ready-for-review','needs-info','ready-for-human','claimed','ready-for-agent','needs-triage','resolved','wontfix'];
+const SEG=s=>{const o=[];String(s||'').split(/(`[^`]+`|\*\*[^*]+\*\*)/).forEach(p=>{if(!p)return;if(p[0]==='`')o.push({t:p.slice(1,-1),code:true});else if(p.startsWith('**'))o.push({t:p.slice(2,-2),bold:true});else o.push({t:p,plain:true});});return o;};
+const PLAIN=s=>String(s||'').replace(/\*\*|`/g,'');
+const C=(arr,done)=>arr.map((t,i)=>({t,done:Array.isArray(done)?done.includes(i):done}));
+const now=()=>new Date().toTimeString().slice(0,5);
+const SCRIPTS={
+  '08':['Grep "collapsed" in public/','Read public/app.js:410–520','Edit public/app.js  +14 −3','Edit public/app.js  +6 −1','Run npm test','139 tests passed','Open ui-polish-08.dev.localhost:4800','Check lanes after switching features','Commit 2f81c0a'],
+  back:['Read review notes','Read public/app.js:955–980','Edit public/app.js  +3 −0','Run npm test','139 tests passed','Commit 8e1d4b7']
+};
+const R=(summary,commits,files,items)=>({summary,commits,files,items:items||[]});
+const TICKETS=[
+ {num:'01',title:'Keep scroll position and open sections across live updates',type:'bug',status:'resolved',what:'While an agent runs, the **Agent activity** list in the detail panel jumps back to the top and closes open sections on every live update. Keep scroll position and open sections when the panel re-renders.',criteria:C(['Scroll position survives live updates','Open sections stay open','Switching tickets still resets scroll'],true),agent:{state:'done',finished:'Yesterday 16:40',ran:'14m',report:R('I save the panel’s scroll position and open `<details>` before `renderDrawer()` and restore them after.',[{sha:'a3c19e2',msg:'Preserve drawer scroll and open sections across live updates'}],[{p:'public/app.js',a:31,d:6}])}},
+ {num:'02',title:'Board can scroll fully into view while the drawer is open',type:'bug',status:'resolved',what:'The detail drawer is `position: fixed` on the right (`.drawer` in `public/style.css`), so the last lanes sit underneath it and can’t be scrolled into view.',criteria:C(['Every lane can be scrolled into view with the drawer open','Closing the drawer removes the extra space'],true),agent:{state:'done',finished:'Yesterday 15:02',ran:'7m',report:R('The board gets right padding equal to the drawer width while the drawer is open.',[{sha:'b81f0d4',msg:'Pad the board by the drawer width while the drawer is open'}],[{p:'public/style.css',a:4,d:0},{p:'public/app.js',a:2,d:0}])}},
+ {num:'03',title:'Group the drawer header into links, commands and paths',type:'enhancement',status:'resolved',what:'The row under the ticket title (`drawerLinks` in `renderDrawer()`) mixes copy commands, paths and links in one line. Group them by kind.',criteria:C(['Commands, paths and links are grouped','Each group has a label'],true),agent:{state:'done',finished:'Mon 11:20',ran:'18m',report:R('I split `drawerLinks` into commands, paths and links.',[{sha:'5e02a77',msg:'Group drawer header into links, commands and paths'}],[{p:'public/app.js',a:40,d:22},{p:'public/style.css',a:12,d:3}])}},
+ {num:'04',title:'Streamline the agent panel',type:'enhancement',status:'resolved',what:'The Claude Code section of the detail panel (`renderAgent()` in `public/app.js`) shows every control at once. Show only the controls that apply to the agent’s current state.',criteria:C(['Running shows Stop and Copy attach','Stopped shows Continue and Back to ready-for-agent'],true),agent:{state:'done',finished:'Mon 10:05',ran:'22m',report:R('`renderAgent()` now picks its controls from the agent state.',[{sha:'9d2e4b1',msg:'Show only agent controls that apply to the current state'}],[{p:'public/app.js',a:58,d:41}])}},
+ {num:'05',title:'Drawer shows another ticket’s agent on tickets without one',type:'bug',status:'resolved',what:'Opening a ticket that has no agent (e.g. `multi-project/01`, status `needs-triage`) shows the agent panel of the previously opened ticket.',criteria:C(['Tickets without an agent show no agent panel','Switching back shows the right agent'],true),agent:{state:'done',finished:'Fri 17:31',ran:'6m',report:R('The agent panel state was cached on the drawer. I keyed it by ticket and clear it when the ticket has no session.',[{sha:'0c7a5f3',msg:'Key agent panel state by ticket'}],[{p:'public/app.js',a:9,d:3}])}},
+ {num:'06',title:'Grey out completed features and list them last in the feature picker',type:'enhancement',status:'resolved',comments:1,what:'In the feature picker, a feature whose tickets are all done shows greyed out and moves to the end of the list.',criteria:C(['Done features are greyed out','Done features are listed last'],true),agent:{state:'done',finished:'Fri 14:12',ran:'9m',report:R('Features whose tickets are all `resolved` or `wontfix` are greyed out and sorted last.',[{sha:'e47b8aa',msg:'Grey out completed features and sort them last'}],[{p:'public/app.js',a:17,d:2}])}},
+ {num:'07',title:'Typing / in the agent comment box jumps to search',type:'bug',status:'ready-for-review',
+  what:'Typing `/` in the agent comment box (the notes for **Send back to agent**) doesn’t add a `/`. Instead the cursor jumps to the search box. Remove the `/` shortcut for search entirely, so `/` always types a `/` wherever you are.',
+  cause:'The keydown handler in `public/app.js` (near the end, next to the `Escape` and `c` shortcuts) focuses `#search` on `/` unless the focused element is an `INPUT`. A `TEXTAREA` isn’t excluded, so `/` in the comment box is swallowed (`preventDefault`) and moves focus to search.',
+  fix:'Delete the `/` shortcut line. Don’t just exclude textareas: the user wants the shortcut gone.',
+  criteria:C(['Typing `/` in the agent comment box adds a `/` and keeps focus there','Pressing `/` with nothing focused does nothing special (no jump to search)','`Escape` and `c` shortcuts work as before','No docs or hints still mention a `/` shortcut'],true),
+  oos:['Other keyboard shortcuts','The search box itself'],
+  branch:'ticket/ui-polish/07-slash-in-agent-comment-starts-search',host:'ui-polish-07.dev.localhost',
+  agent:{state:'done',finished:'14:21',ran:'9m',warning:'Structure diff unavailable: no supported project found (looked for .sln, .slnx and .csproj files).',
+   activity:[{at:'14:12',text:'Read .scratch/ui-polish/issues/07-slash-in-agent-comment-starts-search.md'},{at:'14:12',text:'Grep "\'/\'" in public/app.js'},{at:'14:13',text:'Edit public/app.js  −1'},{at:'14:14',text:'Grep "/ shortcut" in README.md, public/index.html'},{at:'14:15',text:'Run npm test — 139 passed'},{at:'14:18',text:'Open ui-polish-07.dev.localhost:4799'},{at:'14:20',text:'Commit 67d70f0'}],
+   report:R('I removed the `/` search shortcut, so `/` now always types a `/`, including in the **Send back to agent** notes box. The fix is committed as `67d70f0` on `ticket/ui-polish/07-slash-in-agent-comment-starts-search`.',
+    [{sha:'67d70f0',msg:'Remove the / shortcut for search, so / in the agent comment box types a / instead of jumping to the search box'}],[{p:'public/app.js',a:0,d:1}],
+    [{k:'Change',v:'I deleted the `/` line from the keydown handler at `public/app.js:967`. The `Escape` and `c` shortcuts are unchanged.'},{k:'Docs',v:'Nothing else mentioned a `/` shortcut. I searched the README, `index.html` and the search box placeholder.'},{k:'Tests',v:'The full suite passes (139 tests). The front end has no tests, so I didn’t add one for this.'},{k:'Browser check',v:'I ran the app at `ui-polish-07.dev.localhost:4799` and typed `/` in the notes box. It stayed in the box.'}])}},
+ {num:'08',title:'Remember collapsed lanes per feature',type:'enhancement',status:'claimed',
+  what:'Collapsed lanes reset when you switch features. Store them per feature in `localStorage`, so each feature keeps its own board layout.',
+  criteria:C(['Collapsed lanes survive a reload','Each feature keeps its own collapsed lanes','Switching features applies that feature’s lanes without a flash','New features start with only empty lanes collapsed'],[0]),
+  branch:'ticket/ui-polish/08-remember-collapsed-lanes',host:'ui-polish-08.dev.localhost',
+  agent:{state:'running',base:734,started:0,script:'08',step:2,activity:[{at:'14:30',text:'Read .scratch/ui-polish/issues/08-remember-collapsed-lanes.md'},{at:'14:31',text:'Grep "collapsed" in public/'}],
+   pending:R('Collapsed lanes are now stored per feature under `tv:lanes:<feature>` in `localStorage` and applied before the first render, so there is no flash.',[{sha:'2f81c0a',msg:'Remember collapsed lanes per feature'}],[{p:'public/app.js',a:20,d:4}],[{k:'Change',v:'`loadLanes()` and `saveLanes()` in `public/app.js` read and write the collapsed set per feature.'},{k:'Tests',v:'The full suite passes (139 tests).'}])}},
+ {num:'09',title:'Show commit count on cards',type:'enhancement',status:'ready-for-agent',blockedBy:'08',
+  what:'Cards don’t show whether an agent has committed anything yet. Show the commit count next to the criteria progress on `claimed` and `ready-for-review` cards.',
+  criteria:C(['Claimed and review cards show a commit count','Cards with no commits show nothing','Count updates live while the agent runs'],false),agent:{state:'none'}},
+ {num:'10',title:'Toast covers the drawer’s bottom actions',type:'bug',status:'needs-info',comments:2,
+  what:'On narrow windows the toast at the bottom centre overlaps the drawer. Needs a decision: move toasts to the board’s bottom left, or stack them above the drawer?',
+  criteria:C(['Toasts never cover drawer controls','Toasts stay readable on narrow windows'],false),agent:{state:'none'}},
+];
+const BTN={
+  default:{bg:'oklch(0.245 0.006 260)',fg:'oklch(0.93 0.004 260)',bd:'oklch(0.32 0.006 260)'},
+  primary:{bg:'oklch(0.7 0.14 255)',fg:'oklch(0.16 0.03 255)',bd:'oklch(0.7 0.14 255)'},
+  green:{bg:'oklch(0.75 0.13 150)',fg:'oklch(0.17 0.03 150)',bd:'oklch(0.75 0.13 150)'},
+  stop:{bg:'oklch(0.245 0.006 260)',fg:'oklch(0.8 0.13 25)',bd:'oklch(0.36 0.05 25)'}
+};
+const B=(label,on,kind)=>({label,on,...BTN[kind||'default']});
+const fmt=s=>`${Math.floor(s/60)}m ${String(s%60).padStart(2,'0')}s`;
+
+class Component extends DCLogic {
+  state={tickets:TICKETS.map(t=>({...t,criteria:t.criteria.map(c=>({...c})),agent:{...t.agent,activity:[...(t.agent.activity||[])]}})),
+    sel:'07',layout:this.props.layout??'board',q:'',unblocked:false,empty:this.props.emptyLanes??'collapse',expanded:{},menu:false,notes:'',toast:null,showAct:false,collapsed:{resolved:true,wontfix:true},tick:0};
+  componentDidMount(){
+    this.iv=setInterval(()=>this.step(),1000);
+    this.onKey=e=>{if(e.key==='Escape'){if(this.state.menu)this.setState({menu:false});else this.setState({sel:null});}};
+    window.addEventListener('keydown',this.onKey);
+  }
+  componentWillUnmount(){clearInterval(this.iv);clearTimeout(this.tt);window.removeEventListener('keydown',this.onKey);}
+  componentDidUpdate(p){
+    if(p.layout!==this.props.layout&&this.props.layout)this.setState({layout:this.props.layout});
+    if(p.emptyLanes!==this.props.emptyLanes&&this.props.emptyLanes)this.setState({empty:this.props.emptyLanes});
+  }
+  step(){
+    const tick=this.state.tick+1;let msg=null;
+    const tickets=this.state.tickets.map(t=>{
+      if(t.agent.state!=='running'||tick%4)return t;
+      const sc=SCRIPTS[t.agent.script]||SCRIPTS.back;const i=t.agent.step||0;
+      if(i<sc.length)return {...t,agent:{...t.agent,step:i+1,activity:[...t.agent.activity,{at:now(),text:sc[i]}]}};
+      msg=`#${t.num} is ready for review`;
+      const secs=t.agent.base+(tick-t.agent.started);
+      return {...t,status:'ready-for-review',criteria:t.criteria.map(c=>({...c,done:true})),agent:{...t.agent,state:'done',finished:now(),ran:`${Math.max(1,Math.round(secs/60))}m`,report:t.agent.pending||t.agent.report}};
+    });
+    this.setState({tick,tickets});if(msg)this.say(msg);
+  }
+  say(m){clearTimeout(this.tt);this.setState({toast:m});this.tt=setTimeout(()=>this.setState({toast:null}),2400);}
+  copy(label,v){try{navigator.clipboard&&navigator.clipboard.writeText(v||label).catch(()=>{});}catch(e){}this.say(`Copied ${label}`);this.setState({menu:false});}
+  upd(num,fn){this.setState(s=>({tickets:s.tickets.map(t=>t.num===num?fn({...t,agent:{...t.agent}}):t)}));}
+  select(num){this.setState({sel:num,menu:false,notes:'',showAct:false});}
+  start(t){this.upd(t.num,x=>({...x,status:'claimed',branch:x.branch||`ticket/${x.feature||'ui-polish'}/${x.num}-${x.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,32).replace(/-$/,'')}`,host:x.host||`ui-polish-${x.num}.dev.localhost`,agent:{...x.agent,state:'running',base:0,started:this.state.tick,script:'back',step:0,activity:[{at:now(),text:`Read .scratch/ui-polish/issues/${x.num}.md`}]}}));this.say(`#${t.num}: agent started`);}
+  detail(t,byNum){
+    const s=this.state,a=t.agent,st=a.state,issue=`.scratch/ui-polish/issues/${t.num}-${t.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,48)}.md`;
+    const cmd=`/implement ui-polish/${t.num}`;
+    let actions=[],note='';
+    if(t.status==='ready-for-review'&&st==='done')actions=[B('✓ Approve and merge',()=>{this.upd(t.num,x=>({...x,status:'resolved'}));this.say(`#${t.num} approved · merging into main`);},'green'),B('Open diff in meld',()=>this.say('Opening diff in meld…'))];
+    else if(st==='running')actions=[B('■ Stop agent',()=>{this.upd(t.num,x=>({...x,agent:{...x.agent,state:'stopped'}}));this.say(`#${t.num}: agent stopped`);},'stop'),B('Copy attach command',()=>this.copy('attach command',`claude attach ${t.branch}`))];
+    else if(st==='stopped')actions=[B('↻ Continue agent',()=>{this.upd(t.num,x=>({...x,agent:{...x.agent,state:'running'}}));this.say(`#${t.num}: agent continued`);},'primary'),B('Back to ready-for-agent',()=>this.upd(t.num,x=>({...x,status:'ready-for-agent',agent:{state:'none'}})))];
+    else if(t.status==='ready-for-agent')actions=[B('▶ Start agent',()=>this.start(t),'primary'),B('Copy /implement',()=>this.copy('/implement',cmd))];
+    else if(t.status==='needs-info'||t.status==='needs-triage')actions=[B('Copy /triage',()=>this.copy('/triage',`/triage ui-polish/${t.num}`),'primary')];
+    else if(t.status==='ready-for-human')actions=[B('Mark resolved',()=>this.upd(t.num,x=>({...x,status:'resolved'})),'primary')];
+    if(t.status==='resolved')note='Merged into main';
+    const rep=a.report||{};const files=rep.files||[];const adds=files.reduce((n,f)=>n+f.a,0),dels=files.reduce((n,f)=>n+f.d,0);
+    const mx=Math.max(1,...files.map(f=>f.a+f.d));
+    const nc=(rep.commits||[]).length;
+    const feed=(a.activity||[]).map((r,i,arr)=>{const live=st==='running'&&i===arr.length-1;return {at:r.at,text:r.text,mark:live?this.runDot:'',fg:live?'oklch(0.93 0.004 260)':'oklch(0.76 0.006 260)'};});
+    const secs=st==='running'||st==='stopped'?a.base+(s.tick-a.started):0;
+    const agentInfo={running:['Agent is working','oklch(0.8 0.1 205)',this.runDot,'running',`for ${fmt(secs)}`],done:['What the agent did','oklch(0.78 0.13 150)','✓ ','done',`Finished ${a.finished} · ran ${a.ran}`],stopped:['Agent stopped','oklch(0.8 0.13 25)','■ ','stopped','Session is paused. Continue to resume it.'],none:['Agent','','','','']}[st];
+    const blocker=t.blockedBy&&byNum[t.blockedBy];const blocked=blocker&&blocker.status!=='resolved';
+    const done=t.criteria.filter(c=>c.done).length;
+    return {num:t.num,title:t.title,feature:'ui-polish',status:t.status,statusColor:COLOR[t.status],type:t.type,actions,note,hasNote:!!note,
+      agentHeading:agentInfo[0],agentColor:agentInfo[1],agentIcon:agentInfo[2],agentLabel:agentInfo[3],agentMeta:agentInfo[4],hasAgent:st!=='none',
+      isDone:st==='done',isReview:st==='done'&&t.status==='ready-for-review',isNone:st==='none',
+      summary:SEG(rep.summary),items:(rep.items||[]).map(i=>({k:i.k,segs:SEG(i.v)})),hasItems:!!(rep.items||[]).length,
+      commits:rep.commits||[],files:files.map(f=>({...f,ap:Math.round(f.a/mx*100),dp:Math.round(f.d/mx*100)})),adds,dels,
+      changeSummary:`${nc} commit${nc===1?'':'s'} · ${files.length} file${files.length===1?'':'s'}`,
+      hasWarning:!!a.warning,warning:a.warning,onMeld:()=>this.say('Opening diff in meld…'),onStruct:()=>this.say('Structure diff: retrying…'),
+      hasFeed:feed.length>0,feed,feedCount:feed.length,feedOpen:st!=='done'||s.showAct,actChev:s.showAct?'▾':'▸',
+      noneText:blocked?`Blocked by #${t.blockedBy}. You can still start an agent, but it may conflict with #${t.blockedBy}’s changes.`:(t.status==='ready-for-agent'?'No agent has worked on this ticket yet.':'This ticket needs triage before an agent can pick it up.'),
+      noneActions:t.status==='ready-for-agent'?[B('▶ Start agent',()=>this.start(t),'primary')]:[B('Copy /triage',()=>this.copy('/triage',`/triage ui-polish/${t.num}`))],
+      hasWorkspace:!!t.branch,workspace:t.branch?[['Branch',t.branch],['Preview',t.host],['Worktree',`~/wt/ticket-viewer/ui-polish-${t.num}`],['Merges into','main']].map(([k,v])=>({k,v,on:()=>this.copy(k.toLowerCase(),v)})):[],
+      onCopyIssue:()=>this.copy('issue path',issue),
+      hasBlocked:!!blocked,blockedBy:t.blockedBy,blockedTitle:blocker?blocker.title:'',
+      what:SEG(t.what),cause:SEG(t.cause),hasCause:!!t.cause,fix:SEG(t.fix),hasFix:!!t.fix,
+      criteria:t.criteria.map((c,i)=>({segs:SEG(c.t),mark:c.done?'✓':'',boxBg:c.done?'oklch(0.75 0.13 150)':'transparent',boxBd:c.done?'oklch(0.75 0.13 150)':'oklch(0.45 0.008 260)',fg:c.done?'oklch(0.8 0.006 260)':'oklch(0.93 0.004 260)',
+        on:()=>this.upd(t.num,x=>({...x,criteria:x.criteria.map((y,j)=>j===i?{...y,done:!y.done}:y)}))})),
+      critText:`${done}/${t.criteria.length}`,critPct:t.criteria.length?Math.round(done/t.criteria.length*100):0,
+      oos:t.oos||[],hasOos:!!(t.oos||[]).length,issue,cmd};
+  }
+  renderVals(){
+    const s=this.state,P=this.props;
+    if(!this.runDot)this.runDot=React.createElement('span',{style:{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'oklch(0.78 0.12 205)',boxShadow:'0 0 0 3px oklch(0.78 0.12 205 / 0.18)',animation:'tvpulse 1.4s ease-in-out infinite',flex:'none'}});
+    const layout=s.layout,q=s.q.trim().toLowerCase().replace(/^#/,'');
+    const byNum=Object.fromEntries(s.tickets.map(t=>[t.num,t]));
+    const vis=s.tickets.filter(t=>{
+      if(q&&!(t.num.includes(q)||t.title.toLowerCase().includes(q)||t.what.toLowerCase().includes(q)))return false;
+      if(s.unblocked&&t.blockedBy&&byNum[t.blockedBy].status!=='resolved')return false;return true;});
+    const card=t=>{const sel=t.num===s.sel,st=t.agent.state,active=!['resolved','wontfix'].includes(t.status),done=t.criteria.filter(c=>c.done).length;
+      const blocked=!!t.blockedBy&&byNum[t.blockedBy].status!=='resolved';
+      return {num:t.num,title:t.title,type:t.type,excerpt:PLAIN(t.what),running:st==='running',aDone:st==='done'&&active,stopped:st==='stopped'&&active,
+        blocked,blockedBy:t.blockedBy,hasComments:!!t.comments,comments:t.comments?`${t.comments} comment${t.comments>1?'s':''}`:'',
+        hasSub:blocked||!!t.comments,sub:[blocked?`blocked by #${t.blockedBy}`:'',t.comments?`${t.comments} comment${t.comments>1?'s':''}`:''].filter(Boolean).join(' · '),
+        prog:`${done}/${t.criteria.length}`,pct:t.criteria.length?Math.round(done/t.criteria.length*100):0,
+        bg:sel?'oklch(0.26 0.035 255)':'oklch(0.215 0.006 260)',bd:sel?'oklch(0.66 0.13 255)':'oklch(0.26 0.006 260)',
+        rowBg:sel?'oklch(0.25 0.03 255)':'transparent',rowBar:sel?'oklch(0.7 0.14 255)':'transparent',op:active?1:0.66,onClick:()=>this.select(t.num)};};
+    const emptyMode=s.empty;
+    const lanes=ST.map(st=>{const cards=vis.filter(t=>t.status===st.id).map(card),empty=!cards.length,exp=!!s.expanded[st.id];
+      const strip=empty&&emptyMode==='collapse'&&!exp;
+      return {id:st.id,color:st.c,count:cards.length,cards,empty,strip,full:!strip,canCollapse:empty&&emptyMode==='collapse'&&exp,hidden:empty&&emptyMode==='hide',
+        onToggle:()=>this.setState(x=>({expanded:{...x.expanded,[st.id]:!x.expanded[st.id]}}))};}).filter(l=>!l.hidden);
+    const groups=ATTN.map(id=>{const rows=vis.filter(t=>t.status===id).map(card),open=!s.collapsed[id];
+      return {id,color:COLOR[id],count:rows.length,rows,open,chev:open?'▾':'▸',onToggle:()=>this.setState(x=>({collapsed:{...x.collapsed,[id]:!x.collapsed[id]}}))};}).filter(g=>g.count);
+    const selT=s.sel&&byNum[s.sel];
+    const seg=(opts,cur,set)=>opts.map(([v,label,title])=>({label,title:title||label,on:()=>set(v),bg:cur===v?'oklch(0.32 0.008 260)':'transparent',fg:cur===v?'oklch(0.96 0.004 260)':'oklch(0.68 0.008 260)'}));
+    const sub=this.state.tickets;
+    const D={board:['0 0 max(520px, min(660px, 50vw))','1px solid oklch(0.26 0.006 260)','none','row'],strip:['1 1 auto','none','1px solid oklch(0.26 0.006 260)','column'],list:['1 1 auto','1px solid oklch(0.26 0.006 260)','none','row']}[layout];
+    const statuses=ST.map(x=>x.id);
+    return {
+      q:s.q,onQ:e=>this.setState({q:e.target.value}),
+      toggleUb:()=>this.setState(x=>({unblocked:!x.unblocked})),ubBg:s.unblocked?'oklch(0.3 0.05 255)':'oklch(0.21 0.006 260)',ubBd:s.unblocked?'oklch(0.6 0.12 255)':'oklch(0.3 0.006 260)',ubFg:s.unblocked?'oklch(0.92 0.04 255)':'oklch(0.85 0.005 260)',
+      hasLanes:layout!=='list',emptyOpts:seg([['show','Show'],['collapse','Collapse'],['hide','Hide']],emptyMode,v=>this.setState({empty:v,expanded:{}})),
+      layoutOpts:seg([['board','Board','Board with detail drawer'],['strip','Strip','Lanes on top, detail below'],['list','List','Grouped list with detail']],layout,v=>this.setState({layout:v})),
+      runDot:this.runDot,nRunning:sub.filter(t=>t.agent.state==='running').length,nReview:sub.filter(t=>t.status==='ready-for-review').length,
+      isBoard:layout==='board',isStrip:layout==='strip',isList:layout==='list',mainDir:D[3],
+      lanes,groups,showExcerpt:(P.density??'comfortable')==='comfortable',
+      showDetail:!!selT||layout!=='board',hasSel:!!selT,noSel:!selT,dFlex:D[0],dBL:D[1],dBT:D[2],
+      d:selT?this.detail(selT,byNum):{actions:[],feed:[],criteria:[],workspace:[],commits:[],files:[],items:[],summary:[],what:[],cause:[],fix:[],oos:[],noneActions:[]},
+      close:()=>this.setState({sel:null,menu:false}),
+      menuOpen:s.menu,toggleMenu:()=>this.setState(x=>({menu:!x.menu})),
+      menuItems:selT?[['Copy /implement',`/implement ui-polish/${selT.num}`],['Copy /triage',`/triage ui-polish/${selT.num}`],['Copy issue path','.scratch/ui-polish/issues/'+selT.num+'.md'],...(selT.branch?[['Copy worktree path',`~/wt/ticket-viewer/ui-polish-${selT.num}`]]:[])].map(([label,v])=>({label,hint:'',on:()=>this.copy(label.replace('Copy ',''),v)})):[],
+      moveItems:selT?statuses.map(id=>({label:id,color:COLOR[id],bg:id===selT.status?'oklch(0.27 0.008 260)':'transparent',on:()=>{this.upd(selT.num,x=>({...x,status:id}));this.setState({menu:false});this.say(`#${selT.num} moved to ${id}`);}})):[],
+      notes:s.notes,onNotes:e=>this.setState({notes:e.target.value}),
+      sendBack:()=>{if(!s.notes.trim()){this.say('Add review notes first');return;}const n=s.notes.trim();
+        this.upd(s.sel,x=>({...x,status:'claimed',agent:{...x.agent,state:'running',base:0,started:s.tick,script:'back',step:0,report:{...x.agent.report,items:[{k:'Review',v:`Addressed your notes: “${n}”`},...(x.agent.report.items||[])]},pending:null,activity:[...(x.agent.activity||[]),{at:now(),text:`Review notes received: “${n}”`}]}}));
+        this.setState({notes:''});this.say(`#${s.sel} sent back to agent`);},
+      showAct:s.showAct,toggleAct:()=>this.setState(x=>({showAct:!x.showAct})),
+      hasToast:!!s.toast,toast:s.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

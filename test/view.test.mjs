@@ -99,9 +99,9 @@ const ok = { ok: true, why: null };
 const names = r => r.buttons.map(b => `${b.name}:${b.style || 'default'}`);
 const tk = (status, actions = {}, extra = {}) => ({ status, needsYou: false, actions: { moves: {}, ...actions }, ...extra });
 
-test('ready-for-review with an agent: Approve (green) and Open diff in meld, nothing else', () => {
+test('ready-for-review with an agent: Approve (green), Open diff in meld and Copy attach command', () => {
   const t = tk('ready-for-review', { stop: ok, moves: { resolved: ok, claimed: ok, 'ready-for-agent': ok } });
-  assert.deepEqual(names(headerActions(t, { state: 'idle', bgId: 'b' })), ['approve:green', 'diff:default']);
+  assert.deepEqual(names(headerActions(t, { state: 'idle', bgId: 'b' })), ['approve:green', 'diff:default', 'attach:default']);
 });
 
 test('a running agent: Stop agent (stop) and Copy attach command', () => {
@@ -149,7 +149,7 @@ test('an agent that needs you: Copy attach command is primary', () => {
 
 test('conflict actions follow the state buttons whenever the server shows them', () => {
   const t = tk('ready-for-review', { resolveConflicts: ok, mergeByHand: { ok: false, why: 'stop it first' }, moves: { resolved: ok } });
-  assert.deepEqual(names(headerActions(t, { state: 'done', bgId: 'b' })), ['approve:green', 'diff:default', 'resolveConflicts:primary', 'mergeByHand:default']);
+  assert.deepEqual(names(headerActions(t, { state: 'done', bgId: 'b' })), ['approve:green', 'diff:default', 'attach:default', 'resolveConflicts:primary', 'mergeByHand:default']);
   const running = tk('claimed', { stop: ok, mergeByHand: { ok: false, why: 'stop it first' }, moves: {} });
   assert.deepEqual(names(headerActions(running, { state: 'running', bgId: 'b' })), ['stop:stop', 'attach:default', 'mergeByHand:default']);
 });

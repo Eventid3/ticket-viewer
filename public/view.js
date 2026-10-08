@@ -127,6 +127,7 @@
     if (t.status === 'ready-for-review' && a) {
       add('approve', 'green', !!moves.resolved);
       add('diff');
+      add('attach', '', !!a.bgId && !attachFirst);
     } else if (t.status === 'claimed' && t.needsYou) {
       add('attach', 'primary', !!a?.bgId);
       add('continue', '', !!start && !busy);

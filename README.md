@@ -148,7 +148,7 @@ Cards can only be dragged to those lanes. Every other change, such as triage dec
 
 Paths in these commands are relative to the project's repo root (the folder that contains `.scratch/`). Start the agent there.
 
-The detail panel's header stays at the top while the panel scrolls. Under the title it shows the tickets this one is blocked by and blocks, then only the actions for the ticket's current state: Approve and Open diff in meld in review, Stop agent and Copy attach command while the agent runs, Continue agent and Back to ready-for-agent once it stopped, Start agent and Copy /implement in ready-for-agent, Copy /triage before that, Mark resolved in ready-for-human, and none once resolved. When the agent needs you, Copy attach command is the primary action. ⚔ Resolve conflicts and ⇆ Resolve in meld join them when they apply. A refused action is disabled, with the reason as its tooltip.
+The detail panel's header stays at the top while the panel scrolls. Under the title it shows the tickets this one is blocked by and blocks, then only the actions for the ticket's current state: Approve, Open diff in meld and Copy attach command in review (so you can chat with the agent without sending it back), Stop agent and Copy attach command while the agent runs, Continue agent and Back to ready-for-agent once it stopped, Start agent and Copy /implement in ready-for-agent, Copy /triage before that, Mark resolved in ready-for-human, and none once resolved. When the agent needs you, Copy attach command is the primary action. ⚔ Resolve conflicts and ⇆ Resolve in meld join them when they apply. A refused action is disabled, with the reason as its tooltip.
 
 ## Parsing rules
 

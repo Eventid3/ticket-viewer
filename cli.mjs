@@ -19,7 +19,7 @@ When a board is already running, hands the folder to it and exits.
 Options:
   -p, --port <n>             Port to listen on (default 4777; the next free port is used if taken)
       --lanes <list>         Comma-separated lane order (default ${DEFAULT_LANES.join(',')})
-      --no-open              Don't open a browser
+      --open-browser         Open a browser
       --claude <cmd>         Claude Code executable for background agents (default claude)
       --permission-mode <m>  Permission mode for background agents (default auto)
       --difftool <tool>      git difftool and mergetool for reviewing and merging by hand (default meld)
@@ -29,7 +29,7 @@ Options:
 const BOARD_OPTIONS = { lanes: '--lanes', claude: '--claude', permissionMode: '--permission-mode', difftool: '--difftool' };
 
 function parseArgs(argv) {
-  const opts = { dir: null, port: 4777, open: true, lanes: DEFAULT_LANES, claude: 'claude', permissionMode: 'auto', difftool: 'meld', given: new Set() };
+  const opts = { dir: null, port: 4777, open: false, lanes: DEFAULT_LANES, claude: 'claude', permissionMode: 'auto', difftool: 'meld', given: new Set() };
   const set = (key, value) => { opts[key] = value; opts.given.add(key); };
   const lanes = s => s.split(',').map(x => x.trim()).filter(Boolean);
   for (let i = 0; i < argv.length; i++) {
@@ -39,7 +39,7 @@ function parseArgs(argv) {
     else if (a.startsWith('--port=')) opts.port = Number(a.slice(7));
     else if (a === '--lanes') set('lanes', lanes(argv[++i]));
     else if (a.startsWith('--lanes=')) set('lanes', lanes(a.slice(8)));
-    else if (a === '--no-open') opts.open = false;
+    else if (a === '--open-browser') opts.open = true;
     else if (a === '--claude') set('claude', argv[++i]);
     else if (a === '--permission-mode') set('permissionMode', argv[++i]);
     else if (a === '--difftool') set('difftool', argv[++i]);
@@ -103,9 +103,9 @@ async function handOff(opts, port, info) {
 function openBrowser(url) {
   const [cmd, args] = process.platform === 'darwin' ? ['open', [url]]
     : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
-    : ['xdg-open', [url]];
+      : ['xdg-open', [url]];
   try {
-    spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
+    spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', () => { }).unref();
   } catch { /* no browser available; the URL is printed */ }
 }
 
