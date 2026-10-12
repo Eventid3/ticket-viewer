@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createAgents, agentHostname, conflictCheck, mergeTree, parseCommits, parseNumstat } from '../lib/agents.mjs';
+import { createAgents, sessionState, turnMarker, agentHostname, conflictCheck, mergeTree, parseCommits, parseNumstat } from '../lib/agents.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 const commit = (cwd, msg) => {
@@ -806,4 +806,64 @@ test('the record shows meld open while the mergetool runs, and tells the board w
   await toolRan();
   assert.equal(agents.get(B).merging.toolOpen, false);
   assert.ok(changes.includes(B));
+});
+
+test('turnMarker reads the marker on the final line only', () => {
+  assert.equal(turnMarker('Nothing to commit.\n\n[[turn: done]]'), 'done');
+  assert.equal(turnMarker('Which one?\n[[turn: question]]\n'), 'question');
+  assert.equal(turnMarker('[[Turn:  DONE ]]'), 'done');
+  assert.equal(turnMarker('[[turn: done]]\nand then more'), null, 'not the last line');
+  assert.equal(turnMarker('I ended with [[turn: done]] inline'), null);
+  assert.equal(turnMarker('no marker'), null);
+  assert.equal(turnMarker(null), null);
+});
+
+test('sessionState: new commits and the turn marker decide done or idle', () => {
+  const ended = { status: 'idle', state: 'done' };
+  const [commits, none] = [() => true, () => false];
+  assert.equal(sessionState(ended, commits), 'done', 'new commits, no marker');
+  assert.equal(sessionState(ended, commits, 'done'), 'done');
+  assert.equal(sessionState(ended, commits, 'question'), 'idle', 'it asked, even with commits');
+  assert.equal(sessionState(ended, none, 'done'), 'done', 'nothing to commit, but finished');
+  assert.equal(sessionState(ended, none, 'question'), 'idle');
+  assert.equal(sessionState(ended, none), 'idle', 'no marker, no commits');
+  assert.equal(sessionState({ status: 'waiting' }, none, 'done'), 'waiting');
+  assert.equal(sessionState({ status: 'busy' }, commits, 'done'), 'running');
+  assert.equal(sessionState({ state: 'stopped' }, commits, 'done'), 'stopped');
+});
+
+function writeTranscript(claudeHome, lastText) {
+  const dir = path.join(claudeHome, 'projects', 'some-project');
+  fs.mkdirSync(dir, { recursive: true });
+  const line = { type: 'assistant', timestamp: '2026-01-01T10:00:00Z', message: { content: [{ type: 'text', text: lastText }] } };
+  fs.writeFileSync(path.join(dir, 'session-bg1.jsonl'), JSON.stringify(line) + '\n');
+}
+
+test('poll: a turn without commits is done with the done marker, a question with the question marker, else idle and not asked', async () => {
+  const { cli, agents, claudeHome, ticket } = setup();
+  await agents.start(ID, ticket);
+  cli.set('bg1', { status: 'idle', state: 'done' });
+
+  await agents.poll();
+  assert.equal(agents.get(ID).state, 'idle');
+  assert.equal(agents.get(ID).asked, false, 'no marker: finished, not a question');
+
+  writeTranscript(claudeHome, 'Which database?\n\n[[turn: question]]');
+  await agents.poll();
+  assert.equal(agents.get(ID).state, 'idle');
+  assert.equal(agents.get(ID).asked, true);
+
+  writeTranscript(claudeHome, 'Nothing new to commit.\n\n[[turn: done]]');
+  await agents.poll();
+  assert.equal(agents.get(ID).state, 'done');
+  assert.equal(agents.get(ID).asked, false);
+});
+
+test('the session note and the resume message state the turn marker rule', async () => {
+  const { cli, agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  assert.match(cli.calls[0].args.join(' '), /\[\[turn: done\]\].*\[\[turn: question\]\]/s);
+  await agents.poll();
+  await agents.resume(ID, ticket, 'More please');
+  assert.match(cli.calls.at(-1).args.join(' '), /\[\[turn: done\]\].*\[\[turn: question\]\]/s);
 });

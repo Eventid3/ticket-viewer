@@ -53,11 +53,13 @@ The board can run Claude Code for you, as Claude Code background sessions (`clau
 2. **Follow**: the board polls `claude agents --json` and shows the session's state on the card:
    - **● agent running**
    - **⚠ needs you**: the agent is waiting on a permission prompt. The panel shows the command it wants to run.
-   - **💬 waiting for a reply**: the agent ended its turn without committing, so it probably asked you something.
+   - **💬 waiting for a reply**: the agent ended its turn with a question for you (the `[[turn: question]]` marker below).
+   - **Agent finished · nothing committed**: the agent ended its turn without committing and without saying it was done or asking anything (it forgot the marker, or the session predates it). It shows as **⚠ needs you**; move the ticket yourself (below).
    - **■ agent stopped**
 
    **Copy attach command** (also the ⧉ button on a claimed card) copies `claude attach <id>`. Run it in a terminal to watch the session, answer prompts, or reply. The session keeps running when you leave it (← or Ctrl+Z).
-3. **Review**: when the agent ends its turn with new commits, the ticket moves to **ready-for-review**. There:
+   **Turn marker**: the agent's prompt, on start and on every resume (including sent-back review notes), tells it to end its final message with one marker on its own last line: `[[turn: done]]` (nothing left to do for now, committed or not, e.g. it only answered review notes) or `[[turn: question]]` (it needs an answer from you). The board reads it from the session transcript. The agent never edits the Status line.
+3. **Review**: when the agent ends its turn with new commits, or with nothing to commit and the `[[turn: done]]` marker, the ticket moves to **ready-for-review**. A `[[turn: question]]` marker keeps it in claimed, even with commits. You can also move a claimed ticket there yourself, without `/triage`, with **Move to ready-for-review** in the detail header or Commands menu (or by dragging the card), while its agent is idle or stopped; it's refused with a reason while the agent is starting, running or waiting, or a merge is in progress. There:
    - **Open diff in meld** runs `git difftool --dir-diff --tool=meld <review base>` in the worktree, so you see everything the ticket changed, including uncommitted work. The review base is `git merge-base <reference branch> HEAD` (see [Merge conflicts](#merge-conflicts)), so merging the reference branch into the ticket's branch doesn't fill the review with other tickets' work. The panel also lists the commits and a diff stat, under the agent's summary and report.
    - **Open structure diff** (only when [codemap](#structure-diff-codemap) is installed) opens codemap's review list of structural changes since the same review base.
    - **Approve** sets `resolved`, stops the session (its conversation is kept), stops its [worktree processes](#worktree-processes), and copies `git merge <branch> && git worktree remove <worktree> && git branch -d <branch>`. You do the merge, on the reference branch its title names. With a [merge conflict](#merge-conflicts) it still works, but the toast warns you.

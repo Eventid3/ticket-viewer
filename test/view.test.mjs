@@ -143,8 +143,8 @@ test('resolved: no buttons, a muted Resolved note', () => {
 test('an agent that needs you: Copy attach command is primary', () => {
   const waiting = tk('claimed', { stop: ok, moves: { 'ready-for-agent': { ok: false, why: 'Stop the agent first' } } }, { needsYou: true });
   assert.deepEqual(names(headerActions(waiting, { state: 'waiting', bgId: 'b' })), ['attach:primary', 'stop:stop']);
-  const idle = tk('claimed', { stop: ok, start: { ...ok, resume: true }, moves: { 'ready-for-agent': ok } }, { needsYou: true });
-  assert.deepEqual(names(headerActions(idle, { state: 'idle', bgId: 'b' })), ['attach:primary', 'continue:default', 'stop:stop']);
+  const idle = tk('claimed', { stop: ok, start: { ...ok, resume: true }, moves: { 'ready-for-agent': ok, 'ready-for-review': ok } }, { needsYou: true });
+  assert.deepEqual(names(headerActions(idle, { state: 'idle', bgId: 'b' })), ['attach:primary', 'continue:default', 'toReview:default', 'stop:stop']);
 });
 
 test('conflict actions follow the state buttons whenever the server shows them', () => {
@@ -240,7 +240,7 @@ test('bullets inside a code fence are not report items', () => {
   assert.equal(splitReport(md).summary, md);
 });
 
-const { agentHeading, noAgentPrompt, isTriage } = globalThis.TicketView;
+const { agentHeading, idleText, noAgentPrompt, isTriage } = globalThis.TicketView;
 
 test('the Agent section heading follows the agent state; needs you and waiting for a reply have their own', () => {
   assert.equal(agentHeading(null), 'Agent');
@@ -250,7 +250,18 @@ test('the Agent section heading follows the agent state; needs you and waiting f
   assert.equal(agentHeading({ state: 'stopped' }), 'Agent stopped');
   assert.equal(agentHeading({ state: 'failed' }), 'Agent stopped');
   assert.equal(agentHeading({ state: 'waiting' }), 'Agent needs you');
-  assert.equal(agentHeading({ state: 'idle' }), 'Agent is waiting for a reply');
+  assert.equal(agentHeading({ state: 'idle', asked: true }), 'Agent is waiting for a reply');
+  assert.equal(agentHeading({ state: 'idle' }), 'Agent finished · nothing committed');
+  assert.equal(agentHeading({ state: 'idle', asked: false }), 'Agent finished · nothing committed');
+});
+
+test('idle text: only an asked question says waiting for a reply, in the heading, mark, badge and tooltip', () => {
+  const asked = idleText({ state: 'idle', asked: true });
+  assert.match(Object.values(asked).join('|'), /waiting for a reply/i);
+  assert.match(asked.title, /asking you something/);
+  const quiet = idleText({ state: 'idle', asked: false });
+  assert.doesNotMatch(Object.values(quiet).join('|'), /waiting for a reply|asked you|probably/i);
+  for (const key of ['heading', 'mark', 'badge']) assert.match(quiet[key], /finished · nothing committed/i);
 });
 
 test('no agent: ready-for-agent offers Start agent, triage statuses offer Copy /triage, others show nothing', () => {

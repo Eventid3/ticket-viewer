@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ticketActions, refusal, isBusy, needsYou } from '../lib/ticket-actions.mjs';
+import { ticketActions, refusal, isBusy, needsYou, asked } from '../lib/ticket-actions.mjs';
 
 const git = { agents: true };
 const ticket = (status, extra = {}) => ({ status, blocked: false, openBlockers: [], ...extra });
@@ -69,7 +69,7 @@ test('the page gets {ok, why} for actions that apply, and none for those that do
   assert.deepEqual(Object.keys(actions).sort(), ['mergeByHand', 'moves', 'resolveConflicts', 'start', 'stop']);
   assert.deepEqual(actions.resolveConflicts, { ok: false, why: 'An agent is already working on this ticket' });
   assert.deepEqual(actions.stop, { ok: true, why: null });
-  assert.deepEqual(actions.moves, { 'ready-for-agent': { ok: false, why: 'Stop the agent first' } });
+  assert.deepEqual(actions.moves, { 'ready-for-review': { ok: false, why: 'Stop the agent first' }, 'ready-for-agent': { ok: false, why: 'Stop the agent first' } });
 });
 
 test('mid-merge, the merge panel\'s actions replace resolving', () => {
@@ -106,4 +106,12 @@ test('needs you: an agent waiting on a prompt or ended without committing, outsi
   assert.equal(needsYou(ticket('ready-for-agent'), agent('waiting')), false);
   assert.deepEqual(['starting', 'running', 'done', 'stopped', 'failed'].map(state => needsYou(ticket('claimed'), agent(state))), [false, false, false, false, false]);
   assert.equal(needsYou(ticket('claimed'), null), false);
+});
+
+test('asked: only an idle agent whose turn ended with a question', () => {
+  assert.equal(asked(agent('idle', { asked: true })), true);
+  assert.equal(asked(agent('idle', { asked: false })), false);
+  assert.equal(asked(agent('idle')), false);
+  assert.equal(asked(agent('waiting', { asked: true })), false);
+  assert.equal(needsYou(ticket('claimed'), agent('idle', { asked: false })), true, 'a finished turn still leaves the ticket for you to move');
 });

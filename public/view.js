@@ -131,12 +131,14 @@
     } else if (t.status === 'claimed' && t.needsYou) {
       add('attach', 'primary', !!a?.bgId);
       add('continue', '', !!start && !busy);
+      add('toReview', '', !!moves['ready-for-review'] && !busy);
       add('stop', 'stop', !!stop);
     } else if (t.status === 'claimed' && busy) {
       add('stop', 'stop', !!stop);
       add('attach', '', !!a?.bgId);
     } else if (t.status === 'claimed') {
       add('continue', 'primary', !!start);
+      add('toReview', '', !!moves['ready-for-review']);
       add('back', '', !!moves['ready-for-agent']);
     } else if (t.status === 'ready-for-agent') {
       add('start', 'primary', !!start);
@@ -198,6 +200,14 @@
     };
   }
 
+  // What an idle agent (it ended its turn without finishing) is shown as, for the heading, card mark, badge and tooltip:
+  // a question waits for your reply, anything else just ended its turn with nothing committed.
+  function idleText(a) {
+    return a?.asked
+      ? { heading: 'Agent is waiting for a reply', mark: '💬 Waiting for a reply', badge: '💬 waiting for a reply', title: 'The agent ended its turn asking you something' }
+      : { heading: 'Agent finished · nothing committed', mark: 'Agent finished · nothing committed', badge: 'finished · nothing committed', title: 'The agent ended its turn without committing and without asking anything; move the ticket on yourself' };
+  }
+
   // The Agent section's heading for agent `a` (null: no agent).
   function agentHeading(a) {
     switch (a?.state) {
@@ -205,7 +215,7 @@
       case 'done': return 'What the agent did';
       case 'starting': case 'running': return 'Agent is working';
       case 'waiting': return 'Agent needs you';
-      case 'idle': return 'Agent is waiting for a reply';
+      case 'idle': return idleText(a).heading;
       default: return 'Agent stopped';
     }
   }
@@ -299,5 +309,5 @@
     return files.map(f => max ? { added: (f.added ?? 0) / max * width, deleted: (f.deleted ?? 0) / max * width } : { added: 0, deleted: 0 });
   }
 
-  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, readCollapsedGroups, plural, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, changeBars, hhmm, clockTime, duration, runningFor, agentMeta, workspaceRows };
+  globalThis.TicketView = { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, readCollapsedGroups, plural, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, idleText, noAgentPrompt, isTriage, changeBars, hhmm, clockTime, duration, runningFor, agentMeta, workspaceRows };
 })();

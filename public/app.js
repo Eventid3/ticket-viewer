@@ -5,7 +5,7 @@ const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
 
-const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, plural, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, noAgentPrompt, isTriage, changeBars, hhmm, runningFor, agentMeta, workspaceRows } = TicketView;
+const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, plural, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, idleText, noAgentPrompt, isTriage, changeBars, hhmm, runningFor, agentMeta, workspaceRows } = TicketView;
 const $ = id => document.getElementById(id);
 // layout: board, strip or list (LAYOUTS in view.js). emptyLanes: show, collapse or hide the lanes with no tickets. expandedLanes: the empty lanes you expanded by hand in Collapse mode.
 // collapsedGroups: the List layout's closed groups, by status.
@@ -579,7 +579,7 @@ function agentMark(a) {
     case 'starting': return mark('running', {}, el('span', { class: 'run-dot' }), 'Agent starting');
     case 'running': return mark('running', { title: `Working on ${a.branch}` }, el('span', { class: 'run-dot' }), 'Agent running');
     case 'waiting': return mark('waiting', { title: `Attach to answer: ${attachCommand(a)}` }, `⚠ Needs you: ${a.waitingFor}`);
-    case 'idle': return mark('idle', { title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 Waiting for a reply');
+    case 'idle': return mark('idle', { title: idleText(a).title }, idleText(a).mark);
     case 'done': return mark('done', { title: a.branch }, '✓ Agent done');
     case 'failed': return mark('failed', { title: a.error || '' }, '✕ Agent failed to start');
     default: return mark('stopped', { title: 'The session is not running; attaching reopens it' }, '■ Agent stopped');
@@ -612,7 +612,7 @@ function agentStateLabel(a) {
     case 'starting': return label('running', {}, el('span', { class: 'run-dot' }), 'starting');
     case 'running': return label('running', { title: `Working on ${a.branch}` }, el('span', { class: 'run-dot' }), 'running');
     case 'waiting': return label('waiting', { title: `Attach to answer: ${attachCommand(a)}` }, `⚠ needs you: ${a.waitingFor}`);
-    case 'idle': return label('idle', { title: 'The agent ended its turn without committing; it probably asked you something' }, '💬 waiting for a reply');
+    case 'idle': return label('idle', { title: idleText(a).title }, idleText(a).badge);
     case 'done': return label('done', { title: a.branch }, '✓ done');
     case 'failed': return label('failed', { title: a.error || '' }, '✕ failed to start');
     default: return label('stopped', { title: 'The session is not running; attaching reopens it' }, '■ stopped');
@@ -782,6 +782,12 @@ function renderCommands(t, a) {
     item('Copy issue path', t.absPath, 'issue path'),
     a?.worktree ? item('Copy worktree path', a.worktree, 'worktree path') : null,
     el('div', { class: 'menu-divider', role: 'separator' }),
+    // The moves the board makes itself, without /triage; a refused one is disabled with its reason.
+    ...Object.entries(t.actions.moves).filter(([to]) => to === 'ready-for-review' && t.status === 'claimed').map(([to, m]) =>
+      el('button', {
+        class: 'menu-item', role: 'menuitem', type: 'button', disabled: !m.ok, title: m.ok ? 'Move the ticket without /triage' : m.why,
+        onclick: () => { setCommandsOpen(false); moveTicket(t, to); },
+      }, [el('span', { class: 'dot', style: `--lane-color:${laneColor(to)}` }), `Move to ${to}`])),
     el('div', { class: 'menu-label', id: 'moveLabel' }, 'Move via /triage'),
     el('div', { role: 'group', 'aria-labelledby': 'moveLabel' },
       // Every status, in lane order; the current one is highlighted and copies nothing.
@@ -820,6 +826,7 @@ function actionButtons(t, a) {
     stop: () => ['■ Stop agent', refused(stop, { title: 'Stop the session; its conversation is kept' }), () => api('/api/agent/stop', { id: t.id })],
     attach: () => ['Copy attach command', { title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')],
     continue: () => ['↻ Continue agent', refused(start, { title: 'Resume the session in the background and tell it to carry on' }), () => api('/api/agent/start', { id: t.id })],
+    toReview: () => ['Move to ready-for-review', refused(moves['ready-for-review'], { title: 'The agent is done: move the ticket to ready-for-review without /triage' }), () => moveTicket(t, 'ready-for-review')],
     back: () => ['Back to ready-for-agent', refused(moves['ready-for-agent'], {}), () => moveTicket(t, 'ready-for-agent')],
     start: () => [start.resume ? '▶ Continue agent' : '▶ Start agent', refused(start, { title: 'Claim the ticket and run /implement as a background session' }), () => moveTicket(t, 'claimed')],
     implement: () => ['Copy /implement', { title: `Copy "${implementCommand(t)}"` }, () => copy(implementCommand(t), '/implement command')],
