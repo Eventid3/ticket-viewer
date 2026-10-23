@@ -519,3 +519,42 @@ test('a task whose agent asked a question stays in drafting, waits for a reply a
   assert.equal(task.needsYou, true);
   assert.equal((await s.get('/api/projects')).body.projects.find(p => p.id === 'shop').needsYou, 1);
 });
+
+test('POST /api/agent/reply resumes an asking agent with the answer, keeps the task in drafting and refuses empty or untimely replies', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  const { body: { id } } = await s.post('/api/task/create', { project: 'shop', description: 'Do it' });
+  const reply = message => s.post('/api/agent/reply', { project: 'shop', id, message });
+
+  const early = await reply('Yes');
+  assert.equal(early.status, 409, 'the agent is still starting');
+  assert.match(early.body.error, /busy/);
+
+  const home = path.join(s.root, 'claude-home', 'projects', 'p');
+  fs.mkdirSync(home, { recursive: true });
+  const ev = text => JSON.stringify({ type: 'assistant', timestamp: '2026-01-01T00:00:00Z', message: { content: [{ type: 'text', text }] } });
+  fs.writeFileSync(path.join(home, 'session-bg1.jsonl'), `${ev('Which page?\n\n[[turn: question]]')}\n`);
+  s.cli.set('bg1', { status: 'idle' });
+  await s.board.pollAll();
+  assert.ok((await s.get('/api/tickets?project=shop')).body.tasks.tickets[0].actions.reply.ok);
+
+  for (const message of [undefined, '', '   ']) {
+    const empty = await reply(message);
+    assert.equal(empty.status, 400);
+    assert.match(empty.body.error, /reply/);
+  }
+  assert.equal(s.cli.calls.length, 1, 'nothing was started');
+
+  assert.equal((await reply('The settings page')).status, 200);
+  const call = s.cli.calls[1];
+  assert.deepEqual(call.args.slice(0, 2), ['--resume', 'session-bg1']);
+  assert.match(call.args[2], /The settings page/);
+  assert.match(call.args[2], /## Questions/);
+  assert.match(call.args[2], /\[\[turn: done\]\]/, 'the turn note is appended as on every resume');
+  assert.match(call.args[2], /task-01\.dev\.localhost/, 'and the browser note');
+  const { body } = await s.get('/api/tickets?project=shop');
+  assert.equal(body.tasks.tickets[0].status, 'drafting');
+  assert.ok(['starting', 'running'].includes(body.agents[id].state), 'the agent is running again');
+  assert.equal(body.tasks.tickets[0].actions.reply, undefined, 'the reply box is gone while the agent works');
+  assert.equal((await reply('again')).status, 409);
+});

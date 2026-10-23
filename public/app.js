@@ -911,6 +911,7 @@ function renderAgent() {
     a.error ? el('div', { class: 'warn-row danger' }, el('span', { class: 'warn-text' }, a.error)) : null,
     collapsed ? null : feed,
     final ? renderReport(final, a.reviewNotes) : null,
+    t.actions.reply ? renderReply(t) : null,
     renderMerge(t, a),
     changes?.commits.length || changes?.files.length || changes?.dirty ? renderChanges(t, a, changes) : null,
     t.status === 'ready-for-review' ? renderSendBack(t) : null,
@@ -992,6 +993,29 @@ function renderSendBack(t) {
           moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
         }),
         el('span', { class: 'muted' }, 'The agent resumes on the same branch.'))));
+}
+
+// Answering the question the agent ended its turn with (the reply action, offered only while it waits for one).
+function renderReply(t) {
+  const key = `reply:${t.id}`;
+  const box = el('textarea', {
+    id: 'replyText', class: 'notes', rows: 3, placeholder: 'Your answer goes to the agent\'s session; it records it next to its question under ## Questions',
+    oninput: e => { state.notes[key] = e.target.value; },
+  });
+  box.value = state.notes[key] || '';
+  return el('div', { class: 'review' },
+    el('div', { class: 'send-back' },
+      el('label', { class: 'send-back-label', for: 'replyText' }, 'Reply to the agent'),
+      box,
+      el('div', { class: 'send-back-row' },
+        btn('↩ Send reply', refused(t.actions.reply, { class: 'btn primary', title: 'Resume the agent\'s session with your answer' }), async () => {
+          if (!box.value.trim()) return toast('Write a reply first');
+          if (await api('/api/agent/reply', { id: t.id, message: box.value.trim() })) {
+            delete state.notes[key];
+            toast(`${label(t)}: reply sent · agent running again`);
+          }
+        }),
+        el('span', { class: 'muted' }, 'Permission prompts still need claude attach.'))));
 }
 
 // The files a test merge of the ticket's branch into its reference branch conflicts in; or, while the worktree is
