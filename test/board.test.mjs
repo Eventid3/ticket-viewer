@@ -403,7 +403,7 @@ test('POST /api/criterion ticks a criterion in the file, and refuses a stale one
   assert.equal((await s.post('/api/criterion', { project: 'shop', id: 'feat/01-a.md', index: 'x', text: 'One', done: false })).status, 400);
 });
 
-test('tasks: listed apart from the features, with their own lanes, no actions, and Plan items ticked like criteria', async t => {
+test('tasks: listed apart from the features, with their own lanes and moves, no start, and Plan items ticked like criteria', async t => {
   const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
   t.after(() => s.board.close());
   const tasks = path.join(s.root, 'shop', '.scratch', 'tasks');
@@ -417,7 +417,7 @@ test('tasks: listed apart from the features, with their own lanes, no actions, a
   assert.deepEqual(body.tasks.lanes, ['drafting', 'plan-review', 'implementing', 'ready-for-review', 'resolved', 'wontfix']);
   const [task] = body.tasks.tickets;
   assert.equal(task.id, 'tasks/01-a.md');
-  assert.deepEqual(task.actions.moves, {});
+  assert.deepEqual(Object.keys(task.actions.moves), ['resolved', 'implementing', 'wontfix']);
   assert.equal(task.actions.start, undefined);
   assert.equal(task.blocked, false);
 
@@ -610,4 +610,73 @@ test('plan gate: the plan marker moves drafting to plan-review only with a plan,
   assert.equal((await move('implementing')).status, 200);
   assert.match(s.cli.calls.at(-1).args[2], /approved.*Implement the plan/s);
   assert.equal((await task()).status, 'implementing');
+});
+
+test('task review: implementing ends in ready-for-review on commits or the done marker, stays on a question; approve and wontfix stop the agent', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  const home = path.join(s.root, 'claude-home', 'projects', 'p');
+  fs.mkdirSync(home, { recursive: true });
+  const ev = text => JSON.stringify({ type: 'assistant', timestamp: '2026-01-01T00:00:00Z', message: { content: [{ type: 'text', text }] } });
+  const ends = async (text, commitWork) => {
+    const call = s.cli.calls.at(-1);
+    const bg = s.cli.sessions.at(-1).id;
+    if (commitWork) commit(call.cwd, 'work');
+    fs.writeFileSync(path.join(home, `session-${bg}.jsonl`), `${ev(text)}\n`);
+    s.cli.set(bg, { status: 'idle' });
+    await s.board.pollAll();
+  };
+  const running = async () => { s.cli.set(s.cli.sessions.at(-1).id, { status: 'running' }); await s.board.pollAll(); };
+  const tasksDir = path.join(s.root, 'shop', '.scratch', 'tasks');
+  const open = async () => {
+    const { body: { id } } = await s.post('/api/task/create', { project: 'shop', description: 'Do it' });
+    fs.appendFileSync(path.join(tasksDir, id.split('/')[1]), '\n## Plan\n\n- [ ] Step\n');
+    return id;
+  };
+  const task = async id => (await s.get('/api/tickets?project=shop')).body.tasks.tickets.find(x => x.id === id);
+  const move = (id, to, notes) => s.post('/api/move', { project: 'shop', id, to, notes });
+  const implementing = async id => {
+    await ends('Plan.\n\n[[turn: plan]]');
+    assert.equal((await move(id, 'implementing')).status, 200);
+    assert.equal((await task(id)).status, 'implementing');
+  };
+
+  // A question keeps it in implementing, the done marker moves it on.
+  const a = await open();
+  await implementing(a);
+  await ends('Which flag?\n\n[[turn: question]]');
+  assert.equal((await task(a)).status, 'implementing');
+  assert.equal((await task(a)).needsYou, true);
+  await running();
+  await ends('All done.\n\n[[turn: done]]');
+  assert.equal((await task(a)).status, 'ready-for-review');
+
+  // Send back resumes the session with the notes, then new commits return it to review.
+  assert.equal((await move(a, 'implementing', '')).status, 200, 'notes are optional, as for tickets');
+  await running();
+  await ends('Fixed.', true);
+  assert.equal((await task(a)).status, 'ready-for-review');
+  assert.equal((await move(a, 'implementing', 'Rename the flag')).status, 200);
+  assert.match(s.cli.calls.at(-1).args[2], /^Review feedback on your work[\s\S]*Rename the flag/);
+  assert.equal((await task(a)).status, 'implementing');
+
+  // Refused drags say why; wontfix works from any open lane and stops the running agent.
+  const refused = await move(a, 'ready-for-review');
+  assert.equal(refused.status, 409);
+  assert.match(refused.body.error, /Can't move implementing → ready-for-review/);
+  assert.equal((await move(a, 'resolved')).status, 409);
+  assert.equal((await move(a, 'wontfix')).status, 200);
+  assert.equal((await task(a)).status, 'wontfix');
+  assert.equal(s.cli.sessions.at(-1).state, 'stopped');
+
+  // Approving from review resolves the task and stops the session.
+  const b = await open();
+  await implementing(b);
+  await running();
+  await ends('Done.', true);
+  assert.equal((await task(b)).status, 'ready-for-review');
+  assert.equal((await move(b, 'resolved')).status, 200);
+  assert.equal((await task(b)).status, 'resolved');
+  assert.equal(s.cli.sessions.at(-1).state, 'stopped');
+  assert.equal((await move(b, 'wontfix')).status, 409);
 });

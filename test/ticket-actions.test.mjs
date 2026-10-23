@@ -130,5 +130,25 @@ test('plan-review: approve and send back are moves, refused while the agent is b
   assert.equal(refusal(task('plan-review'), agent('done'), git, 'moves.drafting'), null);
   assert.match(refusal(task('plan-review'), agent('running'), git, 'moves.implementing'), /already working/);
   assert.match(refusal(task('plan-review'), agent('starting'), git, 'moves.drafting'), /already working/);
-  assert.match(refusal(task('drafting'), agent('idle'), git, 'moves.implementing'), /use \/triage/);
+  assert.match(refusal(task('drafting'), agent('idle'), git, 'moves.implementing'), /Can't move drafting → implementing here; a task moves/);
+});
+
+test('task review: approve, send back and wontfix are moves; every other drag is refused with a reason', () => {
+  const task = status => ({ id: 'tasks/01-a.md', status, blocked: false, openBlockers: [] });
+  assert.equal(refusal(task('ready-for-review'), agent('done'), git, 'moves.resolved'), null);
+  assert.equal(refusal(task('ready-for-review'), agent('done'), git, 'moves.implementing'), null);
+  assert.match(refusal(task('ready-for-review'), agent('running'), git, 'moves.implementing'), /already working/);
+  assert.match(refusal(task('ready-for-review'), agent('done'), git, 'moves.drafting'), /Can't move ready-for-review → drafting/);
+  assert.match(refusal(task('implementing'), agent('done'), git, 'moves.ready-for-review'), /Can't move implementing → ready-for-review/);
+  assert.match(refusal(task('drafting'), null, git, 'moves.resolved'), /Can't move drafting → resolved/);
+  assert.match(refusal(task('resolved'), null, git, 'moves.wontfix'), /Can't move resolved → wontfix/);
+  // Any open lane can go to wontfix, even with the agent running: the board stops it.
+  for (const lane of ['drafting', 'plan-review', 'implementing', 'ready-for-review']) {
+    assert.equal(refusal(task(lane), agent('running'), git, 'moves.wontfix'), null, lane);
+  }
+  assert.match(refusal(task('implementing'), agent('idle', { merging: { unresolved: 1 } }), git, 'moves.wontfix'), /Finish or abort/);
+  // Conflict checks and both ways to resolve them apply in implementing too.
+  assert.equal(refusal(task('implementing'), agent('idle', { conflict }), git, 'resolveConflicts'), null);
+  assert.equal(refusal(task('implementing'), agent('idle', { conflict }), git, 'mergeByHand'), null);
+  assert.match(refusal(task('plan-review'), agent('idle', { conflict }), git, 'resolveConflicts'), /not implementing or ready-for-review/);
 });

@@ -122,7 +122,9 @@
     const add = (name, style = '', when = true) => { if (when) buttons.push({ name, style }); };
     if (t.status === 'resolved') return { buttons, note: 'Resolved' };
     // Outside claimed, an agent that needs you still comes first: attaching leads, as the only primary action.
-    const attachFirst = t.needsYou && t.status !== 'claimed' && !!a?.bgId;
+    // A task's work lane is implementing: the same buttons as claimed, minus the ticket-only moves (the server leaves those out).
+    const working = t.status === 'claimed' || t.status === 'implementing';
+    const attachFirst = t.needsYou && !working && !!a?.bgId;
     add('attach', 'primary', attachFirst);
     if (t.status === 'plan-review' && a) {
       add('approvePlan', 'green', !!moves.implementing);
@@ -131,15 +133,15 @@
       add('approve', 'green', !!moves.resolved);
       add('diff');
       add('attach', '', !!a.bgId && !attachFirst);
-    } else if (t.status === 'claimed' && t.needsYou) {
+    } else if (working && t.needsYou) {
       add('attach', 'primary', !!a?.bgId);
       add('continue', '', !!start && !busy);
       add('toReview', '', !!moves['ready-for-review'] && !busy);
       add('stop', 'stop', !!stop);
-    } else if (t.status === 'claimed' && busy) {
+    } else if (working && busy) {
       add('stop', 'stop', !!stop);
       add('attach', '', !!a?.bgId);
-    } else if (t.status === 'claimed') {
+    } else if (working) {
       add('continue', 'primary', !!start);
       add('toReview', '', !!moves['ready-for-review']);
       add('back', '', !!moves['ready-for-agent']);

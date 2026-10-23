@@ -147,7 +147,8 @@ async function api(path, body) {
 async function moveTicket(t, to, notes) {
   const result = await api('/api/move', { id: t.id, to, notes });
   if (!result) return null;
-  toast(to === 'drafting' ? `${label(t)}: plan sent back · agent revising it` : to === 'implementing' ? `${label(t)}: plan approved · agent implementing` : to === 'claimed' ? `${label(t)}: agent started · claude attach to watch` : `${label(t)} → ${to}${stoppedNote(result)}`);
+  const fromReview = t.status === 'ready-for-review';
+  toast(to === 'drafting' ? `${label(t)}: plan sent back · agent revising it` : to === 'implementing' ? `${label(t)}: ${fromReview ? 'sent back' : 'plan approved'} · agent implementing` : to === 'claimed' ? `${label(t)}: agent started · claude attach to watch` : `${label(t)} → ${to}${stoppedNote(result)}`);
   return result;
 }
 
@@ -447,12 +448,22 @@ function toggleLane(status) {
 function dropTarget(target, status) {
   // A plan sent back needs notes, so dropping on drafting doesn't do it; the notes box does.
   const accepts = () => state.dragging && canMove(state.dragging, status) && !(state.dragging.status === 'plan-review' && status === 'drafting');
-  target.addEventListener('dragover', e => { if (accepts()) { e.preventDefault(); target.classList.add('drop'); } });
+  // Why a drop is refused: the server's reason for a move it knows, else the workflow's hint; a send back needs notes.
+  const whyNot = t => t.actions.moves[status]?.why
+    || (t.status === 'plan-review' && status === 'drafting' ? 'Send the plan back with notes in the notes box' : null)
+    || (t.status !== status ? `Can't move ${t.status || 'no status'} → ${status} here${isTask(t) ? '; a task moves by approving or sending back its plan or work, or to wontfix' : '; use /triage'}` : null);
+  target.addEventListener('dragover', e => {
+    if (!state.dragging) return;
+    e.preventDefault(); // so a refused drop still fires and can say why
+    if (accepts()) target.classList.add('drop');
+  });
   target.addEventListener('dragleave', e => { if (!target.contains(e.relatedTarget)) target.classList.remove('drop'); });
   target.addEventListener('drop', e => {
     e.preventDefault();
     target.classList.remove('drop');
-    if (accepts()) moveTicket(state.dragging, status);
+    const t = state.dragging;
+    if (accepts()) moveTicket(t, status);
+    else if (t && whyNot(t)) toast(whyNot(t));
   });
   return target;
 }
@@ -854,7 +865,7 @@ function actionButtons(t, a) {
     triage: () => ['Copy /triage', { title: `Copy "${triageCommand(t)}"` }, () => copy(triageCommand(t), '/triage command')],
     markResolved: () => ['Mark resolved', refused(moves.resolved, { title: 'Move the ticket to resolved' }), () => moveTicket(t, 'resolved')],
     resolveConflicts: () => ['⚔ Resolve conflicts', refused(resolveConflicts, {
-      title: `Move the ticket to claimed and have the agent merge ${a.ref} into ${a.branch} (merge, not rebase), resolve ${plural(a.conflict.files.length, 'file')}, run the tests and commit. Nothing is added to the ticket's ## Comments`,
+      title: `Move the ${isTask(t) ? 'task to implementing' : 'ticket to claimed'} and have the agent merge ${a.ref} into ${a.branch} (merge, not rebase), resolve ${plural(a.conflict.files.length, 'file')}, run the tests and commit. Nothing is added to the ticket's ## Comments`,
     }), async () => {
       if (await api('/api/agent/resolve-conflicts', { id: t.id })) toast(`${label(t)}: agent is resolving the merge conflict · claude attach to watch`);
     }],
@@ -980,7 +991,7 @@ function renderReport(message, reviewNotes) {
 // Sending a ticket in review back to its agent, with notes; the structure diff in the Changes block adds its flagged notes.
 function renderSendBack(t) {
   const plan = t.status === 'plan-review';
-  const to = plan ? 'drafting' : 'claimed';
+  const to = plan ? 'drafting' : isTask(t) ? 'implementing' : 'claimed';
   // Kept in state, so the board's live reloads don't wipe what you've written.
   const notes = el('textarea', {
     id: 'sendBackNotes', class: 'notes', rows: 3, placeholder: 'Notes go to the agent\'s session and are added to the ticket\'s ## Comments',

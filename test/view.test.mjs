@@ -111,6 +111,13 @@ test('a running agent: Stop agent (stop) and Copy attach command', () => {
   }
 });
 
+test('an implementing task: Stop agent while it works, and the conflict actions when the agent is idle', () => {
+  const t = tk('implementing', { stop: ok, moves: { wontfix: ok } });
+  assert.deepEqual(names(headerActions(t, { state: 'running', bgId: 'b' })), ['stop:stop', 'attach:default']);
+  const c = tk('implementing', { stop: ok, resolveConflicts: ok, mergeByHand: ok, moves: { wontfix: ok } });
+  assert.deepEqual(names(headerActions(c, { state: 'idle', bgId: 'b' })), ['resolveConflicts:primary', 'mergeByHand:default']);
+});
+
 test('a stopped or failed agent: Continue agent (primary) and Back to ready-for-agent', () => {
   for (const state of ['stopped', 'failed', 'done']) {
     const t = tk('claimed', { start: { ...ok, resume: true }, moves: { 'ready-for-agent': ok } });

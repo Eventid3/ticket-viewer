@@ -38,10 +38,17 @@ test('naming and start prompt', () => {
   assert.equal(wf.branch('My Feat/02-a b.md'), 'ticket/My-Feat/02-a-b');
 });
 
-test('tasks have the task workflow: own lanes, no moves, never an agent start', () => {
+test('tasks have the task workflow: own lanes and moves, never an agent start', () => {
   assert.equal(workflowFor({ id: 'tasks/01-a.md' }), taskWf);
   assert.deepEqual(taskWf.lanes, ['drafting', 'plan-review', 'implementing', 'ready-for-review', 'resolved', 'wontfix']);
-  assert.deepEqual(taskWf.moves, { 'plan-review': ['implementing', 'drafting'] });
+  assert.deepEqual(taskWf.moves, {
+    'drafting': ['wontfix'],
+    'plan-review': ['implementing', 'drafting', 'wontfix'],
+    'implementing': ['wontfix'],
+    'ready-for-review': ['resolved', 'implementing', 'wontfix'],
+  });
+  assert.deepEqual(taskWf.turnEnd, { implementing: 'ready-for-review' });
+  assert.deepEqual(taskWf.conflictLanes, ['implementing', 'ready-for-review']);
   assert.deepEqual(taskWf.planEnd, { drafting: 'plan-review' });
   assert.equal(taskWf.startLane, null);
   assert.deepEqual(taskWf.reviewLanes, ['plan-review', 'ready-for-review']);
