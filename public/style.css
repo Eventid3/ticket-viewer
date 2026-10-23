@@ -19,6 +19,9 @@
   --s-ready-for-review: oklch(0.74 0.14 50);
   --s-resolved: oklch(0.75 0.13 150);
   --s-wontfix: oklch(0.6 0.01 260);
+  --s-drafting: oklch(0.7 0.015 260);
+  --s-plan-review: oklch(0.8 0.13 80);
+  --s-implementing: oklch(0.76 0.11 205);
   --s-other: var(--muted);
   --mono: "Geist Mono", ui-monospace, monospace;
   /* Error, success and warning colours. */

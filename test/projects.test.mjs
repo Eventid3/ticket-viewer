@@ -145,3 +145,16 @@ test('expandPath expands ~ and leaves other paths alone', () => {
   assert.equal(expandPath('  /a/b  '), '/a/b');
   assert.equal(expandPath('rel'), 'rel');
 });
+
+test('resolveProject: a repo root without .scratch, and a repo with only a tasks folder, are projects', () => {
+  const root = tmp();
+  const bare = path.join(root, 'bare');
+  fs.mkdirSync(bare);
+  git(bare, 'init', '-q', '-b', 'main');
+  assert.deepEqual(resolveProject(bare), { scratchRoot: path.join(bare, '.scratch'), feature: null });
+
+  const tasksOnly = path.join(root, 'tasks-only');
+  fs.mkdirSync(path.join(tasksOnly, '.scratch', 'tasks'), { recursive: true });
+  assert.deepEqual(resolveProject(tasksOnly), { scratchRoot: path.join(tasksOnly, '.scratch'), feature: null });
+  assert.deepEqual(resolveProject(path.join(tasksOnly, '.scratch', 'tasks')), { scratchRoot: path.join(tasksOnly, '.scratch'), feature: null });
+});

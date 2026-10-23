@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TICKET_WORKFLOW as wf, workflowFor } from '../lib/workflow.mjs';
+import { TICKET_WORKFLOW as wf, TASK_WORKFLOW as taskWf, workflowFor } from '../lib/workflow.mjs';
 
 test('every ticket has the ticket workflow', () => {
   assert.equal(workflowFor({ id: 'f/01-a.md' }), wf);
@@ -36,4 +36,12 @@ test('naming and start prompt', () => {
   assert.equal(wf.sessionName('/x/issues/01-workflow-seam.md'), 'ticket 01-workflow-seam');
   assert.equal(wf.hostname(id), 'task-workflow-01.dev.localhost');
   assert.equal(wf.branch('My Feat/02-a b.md'), 'ticket/My-Feat/02-a-b');
+});
+
+test('tasks have the task workflow: own lanes, no moves, never an agent start', () => {
+  assert.equal(workflowFor({ id: 'tasks/01-a.md' }), taskWf);
+  assert.deepEqual(taskWf.lanes, ['drafting', 'plan-review', 'implementing', 'ready-for-review', 'resolved', 'wontfix']);
+  assert.deepEqual(taskWf.moves, {});
+  assert.equal(taskWf.startLane, null);
+  assert.deepEqual(taskWf.reviewLanes, ['ready-for-review']);
 });

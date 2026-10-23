@@ -307,3 +307,109 @@ test('toggleCriterion refuses when the criterion at that index changed text or s
   assert.throws(() => toggleCriterion(md, 0, { text: 'One', done: true }), /already unticked/);
   assert.throws(() => toggleCriterion(md, 2, { text: 'Three', done: false }), /no criterion 3/i);
 });
+
+const TASK = `# 03: Rename the export button
+
+**Status:** plan-review
+
+**Blocked by:** 01
+
+## Description
+
+The export button should say Download.
+
+- [ ] not a plan item
+
+## Questions
+
+- Which pages?
+
+## Research
+
+It lives in \`Toolbar.cshtml\`.
+
+## Plan
+
+- [x] Rename the label
+- [ ] Update the tests
+
+## Comments
+
+- **2026-10-01:** fine
+`;
+
+test('a task shows Description, Questions, Research and Plan, and its Plan is the criteria', () => {
+  const t = parseTicket(TASK, '03-rename.md', 'tasks');
+  assert.deepEqual(t.sections.map(s => [s.key, s.label]), [
+    ['description', 'Description'], ['questions', 'Questions'], ['research', 'Research'], ['criteria', 'Plan'], [null, 'Comments'],
+  ]);
+  assert.deepEqual(t.sections.find(s => s.key === 'criteria').items.map(i => [i.text, i.done]), [['Rename the label', true], ['Update the tests', false]]);
+  assert.match(t.sections[0].body, /not a plan item/, 'a checklist in the description stays text');
+  assert.deepEqual(t.checks, { done: 1, total: 2 });
+  assert.equal(t.status, 'plan-review');
+  assert.equal(t.title, 'Rename the export button');
+  assert.equal(t.summary, 'The export button should say Download.');
+  assert.equal(t.comments, 1);
+});
+
+test('a task is never blocked, whatever its Blocked by says', () => {
+  assert.deepEqual(parseTicket(TASK, '03-rename.md', 'tasks').blockedBy, []);
+});
+
+test('toggleCriterion ticks a task\'s Plan items', () => {
+  const out = toggleCriterion(TASK, 1, { text: 'Update the tests', done: false }, 'tasks');
+  assert.match(out, /- \[x\] Update the tests/);
+  assert.match(out, /- \[ \] not a plan item/);
+});
+
+function scratch() {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tasks-')));
+  fs.mkdirSync(path.join(root, '.scratch'));
+  return root;
+}
+
+test('.scratch/tasks is read as tasks, never as a feature, even with an issues folder', () => {
+  const root = scratch();
+  const tasks = path.join(root, '.scratch', 'tasks');
+  fs.mkdirSync(path.join(tasks, 'issues'), { recursive: true });
+  fs.writeFileSync(path.join(tasks, '02-b.md'), '# 02: B\n\nStatus: drafting\n');
+  fs.writeFileSync(path.join(tasks, '01-a.md'), TASK);
+  fs.mkdirSync(path.join(root, '.scratch', 'feat', 'issues'), { recursive: true });
+
+  const { features, tasks: found } = resolveFeatures(root);
+  assert.deepEqual(features.map(f => f.name), ['feat']);
+  assert.equal(found.name, 'tasks');
+  assert.equal(found.kind, 'tasks');
+  const loaded = loadFeature(found);
+  assert.deepEqual(loaded.map(t => t.id), ['tasks/01-a.md', 'tasks/02-b.md']);
+  assert.equal(loaded[0].path, '.scratch/tasks/01-a.md');
+  assert.equal(loaded[0].blocked, false);
+  assert.deepEqual(loaded[0].checks, { done: 1, total: 2 });
+  // Pointing at the folder itself names the whole project, not a feature.
+  const direct = resolveFeatures(tasks);
+  assert.deepEqual(direct.features.map(f => f.name), ['feat']);
+  assert.equal(direct.tasks.dir, tasks);
+});
+
+test('tasks of a project without a tasks folder yet are empty', () => {
+  const root = scratch();
+  const { features, tasks } = resolveFeatures(root);
+  assert.deepEqual(features, []);
+  assert.deepEqual(loadFeature(tasks), []);
+});
+
+test('a project with only a tasks folder resolves', () => {
+  const root = scratch();
+  fs.mkdirSync(path.join(root, '.scratch', 'tasks'));
+  assert.deepEqual(resolveFeatures(root).features, []);
+});
+
+test('a repo root without .scratch resolves, and a plain empty folder still does not', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tasks-')));
+  assert.throws(() => resolveFeatures(root), /No ticket folders/);
+  fs.mkdirSync(path.join(root, '.git'));
+  const { scratchRoot, features, tasks } = resolveFeatures(root);
+  assert.equal(scratchRoot, path.join(root, '.scratch'));
+  assert.deepEqual(features, []);
+  assert.equal(tasks.dir, path.join(root, '.scratch', 'tasks'));
+});

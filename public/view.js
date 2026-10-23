@@ -11,7 +11,7 @@
     { value: 'list', label: 'List', title: 'Grouped list with detail' },
   ];
   // The List layout's groups, most in need of attention first: the statuses with a colour (KNOWN_COLORS in app.js), reordered. Other statuses follow, then "no status".
-  const ATTENTION = ['ready-for-review', 'needs-info', 'ready-for-human', 'claimed', 'ready-for-agent', 'needs-triage', 'resolved', 'wontfix'];
+  const ATTENTION = ['ready-for-review', 'plan-review', 'needs-info', 'ready-for-human', 'claimed', 'implementing', 'ready-for-agent', 'drafting', 'needs-triage', 'resolved', 'wontfix'];
   // The List groups collapsed until you open them.
   const COLLAPSED_GROUPS = ['resolved', 'wontfix'];
 

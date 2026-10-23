@@ -15,11 +15,11 @@ The server listens on `127.0.0.1` (default port 4777) and opens your browser.
 
 ## Projects
 
-One board shows every **project** you've added, one at a time. A project is one `.scratch` folder and the tickets under it. A repo root, its `.scratch` folder and any of its feature folders all name the same project, so adding any of them twice keeps one entry.
+One board shows every **project** you've added, one at a time. A project is one `.scratch` folder and the tickets under it. A repo root, its `.scratch` folder and any of its feature folders all name the same project, so adding any of them twice keeps one entry. A project may have only a `tasks` folder, and a repo root with no `.scratch` folder yet can be added too (it shows an empty Tasks entry; the folder is created by its first task).
 
 - **Config file**: projects are remembered in `$XDG_CONFIG_HOME/ticket-viewer/projects.json` (by default `~/.config/ticket-viewer/projects.json`), as a list of `{ "id", "path" }` where `path` is the absolute `.scratch` folder. The id is a slug of the repo folder's name, made when the project is added and never changed; a clash gets `-2`, `-3`, …. The id is what the URL, API and events use.
 - **Names**: the picker shows the repo folder's name (the folder holding `.scratch/`). When two projects share a name, both show `<parent>/<name>`, and go back to the plain name once the clash is gone.
-- **Picker**: top left, pick a project, then a feature in it ("All features" when it has more than one). Completed features (every ticket done) are listed last, greyed out below a `── completed ──` divider; without a feature in the hash the board opens on the first one with work left. The project goes in the URL hash as `project=<id>`, next to `feature` and `ticket`. Without a project in the hash, the board opens the project you picked last, else the first one.
+- **Picker**: top left, pick a project, then a feature in it ("All features" when it has more than one). **Tasks** is pinned at the top of the feature picker, above the features, and is not part of "All features" (see [Tasks](#tasks)); it's `feature=tasks` in the URL hash. Completed features (every ticket done) are listed last, greyed out below a `── completed ──` divider; without a feature in the hash the board opens on the first one with work left. The project goes in the URL hash as `project=<id>`, next to `feature` and `ticket`. Without a project in the hash, the board opens the project you picked last, else the first one.
 - **Add project**: the last entry in the project picker opens a dialog. Type an absolute path (`~` works): a repo root, a `.scratch` folder or a feature folder. The server checks it the same way as the command line and shows what's wrong under the field. On success the project is saved and selected; a feature folder opens on that feature.
 - **Worktrees**: a git worktree of another repo is refused ("This folder is a worktree of <repo>; add the repo instead"). Worktrees share the repo's agent records, so they're never a project of their own; add the repo.
 - **Remove**: the same dialog lists every project with **Remove**. It only forgets the project: no files, worktrees or agent sessions are touched. With agents running it first warns that they keep running but their tickets won't move until you add the project again. Agent records stay in `.git/ticket-viewer/agents.json`, so adding the project back picks them up.
@@ -33,6 +33,15 @@ One board shows every **project** you've added, one at a time. A project is one 
 - `ticket-viewer <folder>` checks the folder, adds it if it's new, and opens the board on it. A folder it can't use is an error.
 - **Hand-off**: before starting, the command checks the port. If a ticket-viewer is already running there, it hands the folder (if you gave one) to that board, opens the browser on it unless `--no-open` is set, and exits; nothing new starts. The running board's errors (say, a worktree) are printed and the command exits non-zero. `--lanes`, `--claude`, `--permission-mode` and `--difftool` values that differ from the running board's are ignored with a warning; restart the board to change them.
 - If something other than a ticket-viewer holds the port, the next free port is used.
+
+## Tasks
+
+A **task** is a small piece of work that belongs to no feature: one markdown file `NN-<slug>.md` in the project's reserved `.scratch/tasks/` folder. That folder is always read as tasks with the task workflow, never as a feature, even if it holds an `issues` folder.
+
+- Pick **Tasks** in the feature picker to see them. It has its own lanes: `drafting`, `plan-review`, `implementing`, `ready-for-review`, `resolved`, `wontfix` (any other status still gets a lane). The Board, Strip and List layouts, search, the URL hash and live reload work as for a feature.
+- Cards and the detail panel look like a ticket's. The Ticket section shows the task's `## Description`, `## Questions`, `## Research` and `## Plan`, then any other section. The Plan's checklist counts as the acceptance criteria: the card shows its progress, and you can tick items in the panel like criteria.
+- A task is never blocked, whatever its `Blocked by:` says. Tasks in ready-for-review count in the project alerts.
+- No agent works on tasks yet and the board makes no moves for them; edit the file (or its `Status:` line) by hand and the board reloads live.
 
 ## What it shows
 

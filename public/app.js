@@ -1,9 +1,13 @@
 'use strict';
 
 const ALL = '__all__';
+// The Tasks entry of the feature picker: no feature can be called this (the folder is reserved).
+const TASKS = 'tasks';
 const ADD_PROJECT = '__add__';
 const NO_STATUS = '';
 const KNOWN_COLORS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'ready-for-review', 'resolved', 'wontfix'];
+// Tasks' own lanes also have a colour each; the ones they share with tickets keep theirs.
+const TASK_COLORS = ['drafting', 'plan-review', 'implementing'];
 
 const { DONE, EMPTY_LANES, LAYOUTS, readLayout, rowMarks, listGroups, listNote, plural, matchesQuery, readPrefs, liveCounts, laneView, plainText, headerActions, splitReport, agentHeading, idleText, noAgentPrompt, isTriage, changeBars, hhmm, runningFor, agentMeta, workspaceRows } = TicketView;
 const $ = id => document.getElementById(id);
@@ -105,11 +109,14 @@ async function load() {
   // Opened from a project alert: the feature whose tickets the alert counts, or all of them when several have some.
   if (state.toAlerts) {
     state.toAlerts = false;
-    const alerting = feats.filter(f => f.tickets.some(t => t.status === 'ready-for-review' || t.needsYou));
-    if (alerting.length) { state.feature = alerting.length > 1 ? ALL : alerting[0].name; writeHash(); }
+    const waiting = f => f.tickets.some(t => t.status === 'ready-for-review' || t.needsYou);
+    const alerting = feats.filter(waiting);
+    // Only tasks waiting: the Tasks entry; features and tasks both: all features.
+    const pick = alerting.length ? (alerting.length > 1 || waiting(state.data.tasks) ? ALL : alerting[0].name) : waiting(state.data.tasks) ? TASKS : null;
+    if (pick) { state.feature = pick; writeHash(); }
   }
   // Without a valid pick the board opens on the first feature with work left, if there is one.
-  if (state.feature !== ALL && !feats.some(f => f.name === state.feature)) state.feature = (feats.find(f => !f.completed) ?? feats[0]).name;
+  if (![ALL, TASKS].includes(state.feature) && !feats.some(f => f.name === state.feature)) state.feature = (feats.find(f => !f.completed) ?? feats[0])?.name ?? TASKS;
   renderFeatureSelect();
   render();
   loadDetail();
@@ -219,13 +226,14 @@ function projectQuery(id) { return new URLSearchParams({ project: state.project,
 
 function currentTickets() {
   if (!state.data) return [];
+  if (state.feature === TASKS) return state.data.tasks.tickets;
   const feats = state.data.features.filter(f => state.feature === ALL || f.name === state.feature);
   return feats.flatMap(f => f.tickets);
 }
 
 function findTicket(id) {
   if (!state.data) return null;
-  for (const f of state.data.features) for (const t of f.tickets) if (t.id === id) return t;
+  for (const f of [...state.data.features, state.data.tasks]) for (const t of f.tickets) if (t.id === id) return t;
   return null;
 }
 
@@ -235,7 +243,7 @@ function matches(t) {
 }
 
 function laneList(tickets) {
-  const lanes = [...state.data.lanes];
+  const lanes = [...(state.feature === TASKS ? state.data.tasks.lanes : state.data.lanes)];
   for (const t of tickets) if (t.status && !lanes.includes(t.status)) lanes.push(t.status);
   if (tickets.some(t => !t.status)) lanes.unshift(NO_STATUS);
   return lanes;
@@ -295,9 +303,11 @@ function fill(node, ...children) {
 }
 
 function laneColor(status) {
-  return KNOWN_COLORS.includes(status) ? `var(--s-${status})` : 'var(--s-other)';
+  return [...KNOWN_COLORS, ...TASK_COLORS].includes(status) ? `var(--s-${status})` : 'var(--s-other)';
 }
 function laneName(status) { return status || 'no status'; }
+// Tasks are the tickets of the Tasks entry.
+function isTask(t) { return t.feature === TASKS; }
 function label(t) { return t.number ? `#${t.number}` : t.file; }
 
 // Disabled options show no tooltip in most browsers, so an unavailable project's reason goes in its text, cut short.
@@ -339,6 +349,8 @@ function renderFeatureSelect() {
   const option = f => el('option', { value: f.name, class: f.completed ? 'completed' : null }, `${f.name} (${f.tickets.length})`);
   const withWork = feats.filter(f => !f.completed), done = feats.filter(f => f.completed);
   sel.replaceChildren(
+    // Pinned above the features, and not part of All features.
+    el('option', { value: TASKS }, `Tasks (${state.data.tasks.tickets.length})`),
     ...(feats.length > 1 ? [el('option', { value: ALL }, 'All features')] : []),
     ...withWork.map(option),
     ...(withWork.length && done.length ? [el('option', { disabled: true }, '── completed ──')] : []),
@@ -724,7 +736,7 @@ function renderTicket(t) {
     el('div', { class: 'ticket-head' },
       el('h3', {}, 'Ticket'),
       el('span', { class: 'spacer' }),
-      btn('Copy issue path', { class: 'btn ghost', title: `Copy "${t.absPath}"` }, () => copy(t.absPath, 'issue path'))),
+      btn(isTask(t) ? 'Copy task path' : 'Copy issue path', { class: 'btn ghost', title: `Copy "${t.absPath}"` }, () => copy(t.absPath, isTask(t) ? 'task path' : 'issue path'))),
     t.blocked ? el('div', { class: 'blocked-note' },
       `Blocked by ${t.openBlockers.map(n => `#${n}`).join(', ')}${blocker ? ` · ${blocker.title}` : ''}`) : null,
     t.blockedBy.length || t.blocks.length ? el('div', { class: 'links-row' },
@@ -776,6 +788,11 @@ function renderCommands(t, a) {
     class: 'menu-item', role: 'menuitem', type: 'button', title: copyText ? `Copy "${copyText}"` : null, ...attrs,
     onclick: () => { setCommandsOpen(false); if (copyText) copy(copyText, what); },
   }, text);
+  // A task has no agent yet, so only its path is worth copying.
+  if (isTask(t)) {
+    fill($('commandsMenu'), item('Copy task path', t.absPath, 'task path'));
+    return setCommandsOpen(state.commandsOpen);
+  }
   fill($('commandsMenu'),
     item('Copy /implement', implementCommand(t), '/implement command'),
     item('Copy /triage', triageCommand(t), '/triage command'),
@@ -1316,7 +1333,8 @@ document.addEventListener('keydown', e => {
   const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
   if (e.key === 'c' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const t = state.ticket && findTicket(state.ticket);
-    const next = t && (nextCommand(t) || { text: implementCommand(t), what: '/implement command' });
+    // A task has no commands to copy yet.
+    const next = t && !isTask(t) && (nextCommand(t) || { text: implementCommand(t), what: '/implement command' });
     if (next) copy(next.text, next.what);
   }
 });

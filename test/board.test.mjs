@@ -401,3 +401,44 @@ test('POST /api/criterion ticks a criterion in the file, and refuses a stale one
   assert.equal((await s.post('/api/criterion', { project: 'shop', id: 'feat/nope.md', index: 0, text: 'One', done: false })).status, 404);
   assert.equal((await s.post('/api/criterion', { project: 'shop', id: 'feat/01-a.md', index: 'x', text: 'One', done: false })).status, 400);
 });
+
+test('tasks: listed apart from the features, with their own lanes, no actions, and Plan items ticked like criteria', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  const tasks = path.join(s.root, 'shop', '.scratch', 'tasks');
+  fs.mkdirSync(path.join(tasks, 'issues'), { recursive: true });
+  const file = path.join(tasks, '01-a.md');
+  fs.writeFileSync(file, '# 01: A\n\nStatus: ready-for-review\n\n## Description\n\nDo it.\n\n## Plan\n\n- [ ] One\n');
+
+  const body = (await s.get('/api/tickets?project=shop')).body;
+  assert.deepEqual(body.features.map(f => f.name), ['feat'], 'tasks/ is not a feature');
+  assert.equal(body.tasks.name, 'tasks');
+  assert.deepEqual(body.tasks.lanes, ['drafting', 'plan-review', 'implementing', 'ready-for-review', 'resolved', 'wontfix']);
+  const [task] = body.tasks.tickets;
+  assert.equal(task.id, 'tasks/01-a.md');
+  assert.deepEqual(task.actions.moves, {});
+  assert.equal(task.actions.start, undefined);
+  assert.equal(task.blocked, false);
+
+  const tick = await s.post('/api/criterion', { project: 'shop', id: task.id, index: 0, text: 'One', done: false });
+  assert.equal(tick.status, 200);
+  assert.match(fs.readFileSync(file, 'utf8'), /- \[x\] One/);
+
+  // Tasks in ready-for-review count in the project alerts.
+  const shop = (await s.get('/api/projects')).body.projects.find(p => p.id === 'shop');
+  assert.equal(shop.review, 1);
+});
+
+test('a repo root without .scratch can be added and shows an empty Tasks entry', async t => {
+  const s = await setup();
+  t.after(() => s.board.close());
+  const dir = path.join(s.root, 'fresh');
+  fs.mkdirSync(dir);
+  git(dir, 'init', '-q', '-b', 'main');
+  const added = await s.post('/api/projects', { path: dir });
+  assert.equal(added.status, 200);
+  assert.equal(added.body.project.available, true);
+  const body = (await s.get(`/api/tickets?project=${added.body.project.id}`)).body;
+  assert.deepEqual(body.features, []);
+  assert.deepEqual(body.tasks.tickets, []);
+});
