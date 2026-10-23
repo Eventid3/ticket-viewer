@@ -109,7 +109,7 @@ async function load() {
   // Opened from a project alert: the feature whose tickets the alert counts, or all of them when several have some.
   if (state.toAlerts) {
     state.toAlerts = false;
-    const waiting = f => f.tickets.some(t => t.status === 'ready-for-review' || t.needsYou);
+    const waiting = f => f.tickets.some(t => ['plan-review', 'ready-for-review'].includes(t.status) || t.needsYou);
     const alerting = feats.filter(waiting);
     // Only tasks waiting: the Tasks entry; features and tasks both: all features.
     const pick = alerting.length ? (alerting.length > 1 || waiting(state.data.tasks) ? ALL : alerting[0].name) : waiting(state.data.tasks) ? TASKS : null;
@@ -147,7 +147,7 @@ async function api(path, body) {
 async function moveTicket(t, to, notes) {
   const result = await api('/api/move', { id: t.id, to, notes });
   if (!result) return null;
-  toast(to === 'claimed' ? `${label(t)}: agent started · claude attach to watch` : `${label(t)} → ${to}${stoppedNote(result)}`);
+  toast(to === 'drafting' ? `${label(t)}: plan sent back · agent revising it` : to === 'implementing' ? `${label(t)}: plan approved · agent implementing` : to === 'claimed' ? `${label(t)}: agent started · claude attach to watch` : `${label(t)} → ${to}${stoppedNote(result)}`);
   return result;
 }
 
@@ -445,7 +445,8 @@ function toggleLane(status) {
 
 // Lets cards be dropped on `target`, a lane or a collapsed lane, to move them to `status`.
 function dropTarget(target, status) {
-  const accepts = () => state.dragging && canMove(state.dragging, status);
+  // A plan sent back needs notes, so dropping on drafting doesn't do it; the notes box does.
+  const accepts = () => state.dragging && canMove(state.dragging, status) && !(state.dragging.status === 'plan-review' && status === 'drafting');
   target.addEventListener('dragover', e => { if (accepts()) { e.preventDefault(); target.classList.add('drop'); } });
   target.addEventListener('dragleave', e => { if (!target.contains(e.relatedTarget)) target.classList.remove('drop'); });
   target.addEventListener('drop', e => {
@@ -845,6 +846,7 @@ function actionButtons(t, a) {
     stop: () => ['■ Stop agent', refused(stop, { title: 'Stop the session; its conversation is kept' }), () => api('/api/agent/stop', { id: t.id })],
     attach: () => ['Copy attach command', { title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')],
     continue: () => ['↻ Continue agent', refused(start, { title: 'Resume the session in the background and tell it to carry on' }), () => api('/api/agent/start', { id: t.id })],
+    approvePlan: () => ['✓ Approve plan', refused(moves.implementing, { title: 'Resume the agent\'s session with "implement the plan"' }), () => moveTicket(t, 'implementing')],
     toReview: () => ['Move to ready-for-review', refused(moves['ready-for-review'], { title: 'The agent is done: move the ticket to ready-for-review without /triage' }), () => moveTicket(t, 'ready-for-review')],
     back: () => ['Back to ready-for-agent', refused(moves['ready-for-agent'], {}), () => moveTicket(t, 'ready-for-agent')],
     start: () => [start.resume ? '▶ Continue agent' : '▶ Start agent', refused(start, { title: 'Claim the ticket and run /implement as a background session' }), () => moveTicket(t, 'claimed')],
@@ -914,7 +916,7 @@ function renderAgent() {
     t.actions.reply ? renderReply(t) : null,
     renderMerge(t, a),
     changes?.commits.length || changes?.files.length || changes?.dirty ? renderChanges(t, a, changes) : null,
-    t.status === 'ready-for-review' ? renderSendBack(t) : null,
+    ['plan-review', 'ready-for-review'].includes(t.status) ? renderSendBack(t) : null,
     collapsed && feed ? el('details', { class: 'activity', 'data-keep': 'activity' },
       el('summary', {}, `Agent activity · ${plural(d.items.length, 'step')}`), feed) : null,
     renderWorkspace(a),
@@ -977,6 +979,8 @@ function renderReport(message, reviewNotes) {
 
 // Sending a ticket in review back to its agent, with notes; the structure diff in the Changes block adds its flagged notes.
 function renderSendBack(t) {
+  const plan = t.status === 'plan-review';
+  const to = plan ? 'drafting' : 'claimed';
   // Kept in state, so the board's live reloads don't wipe what you've written.
   const notes = el('textarea', {
     id: 'sendBackNotes', class: 'notes', rows: 3, placeholder: 'Notes go to the agent\'s session and are added to the ticket\'s ## Comments',
@@ -988,11 +992,11 @@ function renderSendBack(t) {
       el('label', { class: 'send-back-label', for: 'sendBackNotes' }, 'Send back with notes'),
       notes,
       el('div', { class: 'send-back-row' },
-        btn('↩ Send back to agent', refused(t.actions.moves.claimed, { title: 'Resume the agent\'s session with your notes' }), () => {
+        btn(plan ? '↩ Send plan back' : '↩ Send back to agent', refused(t.actions.moves[to], { title: 'Resume the agent\'s session with your notes' }), () => {
           if (!notes.value.trim()) return toast('Add review notes first');
-          moveTicket(t, 'claimed', notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
+          moveTicket(t, to, notes.value.trim()).then(ok => { if (ok) delete state.notes[t.id]; });
         }),
-        el('span', { class: 'muted' }, 'The agent resumes on the same branch.'))));
+        el('span', { class: 'muted' }, plan ? 'The agent revises the plan in the same session.' : 'The agent resumes on the same branch.'))));
 }
 
 // Answering the question the agent ended its turn with (the reply action, offered only while it waits for one).

@@ -558,3 +558,56 @@ test('POST /api/agent/reply resumes an asking agent with the answer, keeps the t
   assert.equal(body.tasks.tickets[0].actions.reply, undefined, 'the reply box is gone while the agent works');
   assert.equal((await reply('again')).status, 409);
 });
+
+test('plan gate: the plan marker moves drafting to plan-review only with a plan, then approve or send back resume the session', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  const { body: { id } } = await s.post('/api/task/create', { project: 'shop', description: 'Do it' });
+  const file = path.join(s.root, 'shop', '.scratch', 'tasks', id.split('/')[1]);
+  const home = path.join(s.root, 'claude-home', 'projects', 'p');
+  fs.mkdirSync(home, { recursive: true });
+  const ev = text => JSON.stringify({ type: 'assistant', timestamp: '2026-01-01T00:00:00Z', message: { content: [{ type: 'text', text }] } });
+  const ends = async text => {
+    const bg = s.cli.sessions.at(-1).id;
+    fs.writeFileSync(path.join(home, `session-${bg}.jsonl`), `${ev(text)}\n`);
+    s.cli.set(bg, { status: 'idle' });
+    await s.board.pollAll();
+  };
+  const task = async () => (await s.get('/api/tickets?project=shop')).body.tasks.tickets[0];
+  const move = (to, notes) => s.post('/api/move', { project: 'shop', id, to, notes });
+
+  await ends('Plan below.\n\n[[turn: plan]]');
+  let tk = await task();
+  assert.equal(tk.status, 'drafting', 'no ## Plan section: stays in drafting');
+  assert.equal(tk.needsYou, true);
+
+  fs.appendFileSync(file, '\n## Plan\n\n- [ ] Step one\n');
+  s.cli.set(s.cli.sessions.at(-1).id, { status: 'running' });
+  await s.board.pollAll();
+  await ends('Plan below.\n\n[[turn: plan]] ');
+  tk = await task();
+  assert.equal(tk.status, 'plan-review');
+  assert.equal((await s.get('/api/projects')).body.projects.find(p => p.id === 'shop').review, 1);
+
+  assert.equal((await move('drafting', '  ')).status, 400, 'empty notes are refused');
+  assert.equal((await move('drafting')).status, 400);
+  assert.equal(s.cli.calls.length, 1);
+  assert.equal((await move('drafting', 'Cover the error case')).status, 200);
+  assert.match(s.cli.calls[1].args[2], /Cover the error case/);
+  tk = await task();
+  assert.equal(tk.status, 'drafting');
+  assert.match(fs.readFileSync(file, 'utf8'), /## Comments[\s\S]*Cover the error case/);
+
+  // The revised plan comes back, and approving it resumes the session.
+  s.cli.set(s.cli.sessions.at(-1).id, { status: 'running' });
+  await s.board.pollAll();
+  await ends('Revised.\n\n[[turn: plan]]  ');
+  assert.equal((await task()).status, 'plan-review');
+  s.cli.set(s.cli.sessions.at(-1).id, { status: 'running' });
+  await s.board.pollAll();
+  assert.equal((await move('implementing')).status, 409, 'refused while the agent is busy');
+  await ends('Revised.\n\n[[turn: plan]]');
+  assert.equal((await move('implementing')).status, 200);
+  assert.match(s.cli.calls.at(-1).args[2], /approved.*Implement the plan/s);
+  assert.equal((await task()).status, 'implementing');
+});

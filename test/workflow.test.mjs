@@ -41,7 +41,8 @@ test('naming and start prompt', () => {
 test('tasks have the task workflow: own lanes, no moves, never an agent start', () => {
   assert.equal(workflowFor({ id: 'tasks/01-a.md' }), taskWf);
   assert.deepEqual(taskWf.lanes, ['drafting', 'plan-review', 'implementing', 'ready-for-review', 'resolved', 'wontfix']);
-  assert.deepEqual(taskWf.moves, {});
+  assert.deepEqual(taskWf.moves, { 'plan-review': ['implementing', 'drafting'] });
+  assert.deepEqual(taskWf.planEnd, { drafting: 'plan-review' });
   assert.equal(taskWf.startLane, null);
-  assert.deepEqual(taskWf.reviewLanes, ['ready-for-review']);
+  assert.deepEqual(taskWf.reviewLanes, ['plan-review', 'ready-for-review']);
 });

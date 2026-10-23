@@ -123,3 +123,12 @@ test('asked: only an idle agent whose turn ended with a question', () => {
   assert.equal(asked(agent('waiting', { asked: true })), false);
   assert.equal(needsYou(ticket('claimed'), agent('idle', { asked: false })), true, 'a finished turn still leaves the ticket for you to move');
 });
+
+test('plan-review: approve and send back are moves, refused while the agent is busy', () => {
+  const task = status => ({ id: 'tasks/01-a.md', status, blocked: false, openBlockers: [] });
+  assert.equal(refusal(task('plan-review'), agent('done', { planned: true }), git, 'moves.implementing'), null);
+  assert.equal(refusal(task('plan-review'), agent('done'), git, 'moves.drafting'), null);
+  assert.match(refusal(task('plan-review'), agent('running'), git, 'moves.implementing'), /already working/);
+  assert.match(refusal(task('plan-review'), agent('starting'), git, 'moves.drafting'), /already working/);
+  assert.match(refusal(task('drafting'), agent('idle'), git, 'moves.implementing'), /use \/triage/);
+});

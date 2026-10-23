@@ -108,7 +108,7 @@
   function liveCounts(tickets, agents) {
     return {
       running: tickets.filter(t => ['running', 'starting'].includes(agents?.[t.id]?.state)).length,
-      review: tickets.filter(t => t.status === 'ready-for-review').length,
+      review: tickets.filter(t => ['plan-review', 'ready-for-review'].includes(t.status)).length,
     };
   }
 
@@ -124,7 +124,10 @@
     // Outside claimed, an agent that needs you still comes first: attaching leads, as the only primary action.
     const attachFirst = t.needsYou && t.status !== 'claimed' && !!a?.bgId;
     add('attach', 'primary', attachFirst);
-    if (t.status === 'ready-for-review' && a) {
+    if (t.status === 'plan-review' && a) {
+      add('approvePlan', 'green', !!moves.implementing);
+      add('attach', '', !!a.bgId && !attachFirst);
+    } else if (t.status === 'ready-for-review' && a) {
       add('approve', 'green', !!moves.resolved);
       add('diff');
       add('attach', '', !!a.bgId && !attachFirst);

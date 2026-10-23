@@ -30,7 +30,7 @@ function fakeCli() {
   return cli;
 }
 
-function setup() {
+function setup(options = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agents-')));
   const repo = path.join(root, 'repo');
   const issues = path.join(repo, '.scratch', 'feat', 'issues');
@@ -41,7 +41,7 @@ function setup() {
   const cli = fakeCli();
   const changes = [];
   const claudeHome = path.join(root, 'claude-home');
-  const agents = createAgents({ scratchRoot: path.join(repo, '.scratch'), cli, claudeHome, onChange: (id, r, prev) => changes.push(`${prev}→${r.state}`) });
+  const agents = createAgents({ scratchRoot: path.join(repo, '.scratch'), cli, claudeHome, onChange: (id, r, prev) => changes.push(`${prev}→${r.state}`), ...options });
   return { root, repo, cli, agents, changes, claudeHome, ticket: path.join(issues, '01-a.md') };
 }
 
@@ -866,4 +866,16 @@ test('the session note and the resume message state the turn marker rule', async
   await agents.poll();
   await agents.resume(ID, ticket, 'More please');
   assert.match(cli.calls.at(-1).args.join(' '), /\[\[turn: done\]\].*\[\[turn: question\]\]/s);
+});
+
+test('turnMarker reads the plan marker; a plan marker without a plan in the file leaves the agent idle', async () => {
+  assert.equal(turnMarker('Plan written.\n[[turn: plan]]'), 'plan');
+  assert.equal(sessionState({ status: 'idle' }, () => false, 'plan'), 'done');
+  const { cli, agents, claudeHome, ticket } = setup({ hasPlan: () => false });
+  await agents.start(ID, ticket);
+  cli.set('bg1', { status: 'idle', state: 'done' });
+  writeTranscript(claudeHome, 'Done.\n\n[[turn: plan]]');
+  await agents.poll();
+  assert.equal(agents.get(ID).state, 'idle');
+  assert.equal(agents.get(ID).planned, false);
 });
