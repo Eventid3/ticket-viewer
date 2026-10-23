@@ -17,6 +17,7 @@
     <span id="alerts" class="alerts" aria-live="polite"></span>
     <select id="feature" class="field" aria-label="Feature"></select>
     <input id="search" class="field search" type="search" placeholder="Filter by number, title, text" aria-label="Filter">
+    <button id="newTask" class="btn primary" type="button" title="Describe a task and start an agent on it" hidden>+ New task</button>
     <button id="unblockedOnly" class="toggle-btn" type="button" aria-pressed="false" title="Hide tickets waiting on an unresolved ticket">Unblocked only</button>
     <div id="emptyLanesField" class="seg-field"><span id="emptyLanesLabel">Empty lanes</span><div id="emptyLanes" class="seg" role="group" aria-labelledby="emptyLanesLabel"></div></div>
     <span class="spacer"></span>
@@ -70,6 +71,21 @@
     </form>
     <ul id="projectList" class="project-list"></ul>
     <p id="projectListEmpty" class="project-hint">No projects yet.</p>
+  </dialog>
+
+  <dialog id="taskDialog" class="projects-dialog" aria-labelledby="taskTitle">
+    <div class="drawer-head">
+      <h2 id="taskTitle">New task</h2>
+      <button id="taskClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+    </div>
+    <form id="taskForm" class="project-form task-form">
+      <label for="taskDescription">Description</label>
+      <textarea id="taskDescription" rows="6" placeholder="What should be done?" required></textarea>
+      <label for="taskName">Title <span class="project-hint">(optional; names the file and branch)</span></label>
+      <input id="taskName" type="text" autocomplete="off" spellcheck="false">
+      <p id="taskError" class="project-error" role="alert" hidden></p>
+      <div class="task-actions"><button id="taskCreate" class="btn primary" type="submit">Create task</button></div>
+    </form>
   </dialog>
 
   <script src="view.js"></script>

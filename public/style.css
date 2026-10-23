@@ -506,3 +506,12 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .project-path { flex: 1; min-width: 0; color: var(--muted); font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-warning { color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 6px 8px; margin-top: 6px; font-size: 13px; }
 .btn.danger { background: var(--danger); border-color: var(--danger); color: oklch(0.17 0.03 25); }
+
+/* New task dialog */
+.task-form textarea, .task-form input {
+  display: block; width: 100%; box-sizing: border-box; margin: 6px 0 12px; padding: 6px 10px; font: inherit; font-size: 13px;
+  border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+}
+.task-form textarea { resize: vertical; }
+.task-form textarea:focus-visible, .task-form input:focus-visible { outline: none; border-color: var(--accent); }
+.task-actions { display: flex; justify-content: flex-end; margin-top: 12px; }

@@ -372,6 +372,8 @@ function renderEmpty() {
 }
 
 function render() {
+  // + New task belongs to the Tasks entry.
+  $('newTask').hidden = !state.data || state.feature !== TASKS;
   if (!state.data) return renderEmpty();
   const all = currentTickets();
   const visible = all.filter(matches);
@@ -1212,6 +1214,29 @@ function renderMarkdown(md) {
   return out.join('\n');
 }
 
+// ---- New task dialog ------------------------------------------------------------------------
+// Creates a task and its agent; a failure shows under the form and the form keeps what you typed.
+function openTaskDialog() {
+  if (!state.data?.agents) { toast('Agents need the project to be a git repository'); return; }
+  $('taskError').hidden = true;
+  $('taskDialog').showModal();
+  $('taskDescription').focus();
+}
+
+async function createTask(e) {
+  e.preventDefault();
+  $('taskCreate').disabled = true;
+  const result = await request('/api/task/create', { description: $('taskDescription').value, title: $('taskName').value });
+  $('taskCreate').disabled = false;
+  if (result.error) { $('taskError').textContent = result.error; $('taskError').hidden = false; return; }
+  $('taskForm').reset();
+  $('taskDialog').close();
+  state.ticket = result.id;
+  writeHash();
+  await load();
+  toast('Task created · agent started in drafting');
+}
+
 // ---- Add project dialog -------------------------------------------------------------------
 // Adds a project by its path and lists the remembered ones, each with Remove. Removing only forgets the project.
 const dialog = { error: null, busy: false, confirmRemove: null };
@@ -1308,6 +1333,9 @@ $('project').addEventListener('change', e => {
   switchProject(e.target.value || null);
 });
 $('projectForm').addEventListener('submit', addProject);
+$('newTask').addEventListener('click', openTaskDialog);
+$('taskForm').addEventListener('submit', createTask);
+$('taskClose').addEventListener('click', () => $('taskDialog').close());
 $('projectsClose').addEventListener('click', () => $('projectsDialog').close());
 $('feature').addEventListener('change', e => { state.feature = e.target.value; state.ticket = null; writeHash(); render(); });
 $('search').addEventListener('input', e => { state.query = e.target.value; render(); });
@@ -1326,7 +1354,7 @@ $('commands').addEventListener('keydown', e => {
 });
 document.addEventListener('click', e => { if (state.commandsOpen && !$('commands').contains(e.target)) setCommandsOpen(false); });
 document.addEventListener('keydown', e => {
-  if (projectsDialogOpen()) return; // the dialog has its own keys (Escape closes it)
+  if (projectsDialogOpen() || $('taskDialog').open) return; // the dialog has its own keys (Escape closes it)
   // Escape closes the Commands menu first, then the panel.
   if (e.key === 'Escape' && state.commandsOpen) { setCommandsOpen(false); $('commandsBtn').focus(); return; }
   if (e.key === 'Escape' && state.ticket) closeTicket();

@@ -18,8 +18,9 @@ const commit = (cwd, msg) => {
 // Stands in for the `claude` CLI, shared by every project's agents.
 function fakeCli() {
   const cli = {
-    calls: [], sessions: [], next: 1, lists: 0, held: null,
+    calls: [], sessions: [], next: 1, lists: 0, held: null, failWith: null,
     async background(args, cwd) {
+      if (cli.failWith) throw new Error(cli.failWith);
       // While `held` is an array, each call waits there until released, so its agent stays starting.
       if (cli.held) await new Promise(r => cli.held.push(r));
       const id = `bg${cli.next++}`;
@@ -441,4 +442,80 @@ test('a repo root without .scratch can be added and shows an empty Tasks entry',
   const body = (await s.get(`/api/tickets?project=${added.body.project.id}`)).body;
   assert.deepEqual(body.features, []);
   assert.deepEqual(body.tasks.tickets, []);
+});
+
+test('POST /api/task/create writes the next task file in drafting, with its branch, worktree and a /task session', async t => {
+  let shop;
+  const s = await setup({ projects: [r => (shop = makeRepo(r, 'shop', { gitRepo: true }))] });
+  t.after(() => s.board.close());
+  const create = body => s.post('/api/task/create', { project: 'shop', ...body });
+  const tasks = path.join(shop, '.scratch', 'tasks');
+
+  const first = await create({ description: 'Add a dark mode toggle to the settings page', title: '' });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.id, 'tasks/01-add-a-dark-mode-toggle-to.md');
+  const text = fs.readFileSync(path.join(tasks, '01-add-a-dark-mode-toggle-to.md'), 'utf8');
+  assert.match(text, /^Status: drafting$/m);
+  assert.match(text, /## Description\n\nAdd a dark mode toggle to the settings page/);
+
+  const worktree = path.join(shop, '.claude', 'worktrees', 'task-01-add-a-dark-mode-toggle-to');
+  assert.equal(git(worktree, 'branch', '--show-current'), 'task/01-add-a-dark-mode-toggle-to');
+  const [call] = s.cli.calls;
+  assert.equal(call.cwd, worktree);
+  assert.equal(call.args[0].split('\n')[0], `/task ${path.join(tasks, '01-add-a-dark-mode-toggle-to.md')}`);
+  assert.match(call.args[0], /task-01\.dev\.localhost/);
+  assert.equal(call.args[call.args.indexOf('-n') + 1], 'task 01-add-a-dark-mode-toggle-to');
+  assert.ok(!call.args.includes('--model'), 'no model is pinned');
+
+  // The same title twice makes two files; the first is not overwritten. The reference branch is recorded.
+  assert.equal((await create({ description: 'one', title: 'Same' })).body.id, 'tasks/02-same.md');
+  assert.equal((await create({ description: 'two', title: 'Same' })).body.id, 'tasks/03-same.md');
+  assert.match(fs.readFileSync(path.join(tasks, '02-same.md'), 'utf8'), /one/);
+  const { body } = await s.get('/api/tickets?project=shop');
+  assert.equal(body.agents['tasks/01-add-a-dark-mode-toggle-to.md'].ref, 'main');
+  assert.equal(body.agents['tasks/01-add-a-dark-mode-toggle-to.md'].hostname, 'task-01.dev.localhost');
+  assert.equal(body.tasks.tickets.length, 3);
+});
+
+test('a task whose agent cannot start leaves no file, branch, worktree or record behind', async t => {
+  let shop;
+  const s = await setup({ projects: [r => (shop = makeRepo(r, 'shop', { gitRepo: true }))] });
+  t.after(() => s.board.close());
+  s.cli.failWith = 'claude is not logged in';
+  const res = await s.post('/api/task/create', { project: 'shop', description: 'Do it', title: 'Do it' });
+  assert.equal(res.status, 500);
+  assert.match(res.body.error, /claude is not logged in/);
+  assert.deepEqual(fs.readdirSync(path.join(shop, '.scratch', 'tasks')), []);
+  assert.equal(git(shop, 'branch', '--list', 'task/*'), '');
+  assert.equal(git(shop, 'worktree', 'list').split('\n').length, 1);
+  assert.deepEqual((await s.get('/api/tickets?project=shop')).body.agents, {});
+});
+
+test('creating a task needs a description and a git repository', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true }), r => makeRepo(r, 'plain')] });
+  t.after(() => s.board.close());
+  assert.equal((await s.post('/api/task/create', { project: 'shop', description: '  ' })).status, 400);
+  const plain = await s.post('/api/task/create', { project: 'plain', description: 'x' });
+  assert.equal(plain.status, 400);
+  assert.match(plain.body.error, /git repository/);
+});
+
+test('a task whose agent asked a question stays in drafting, waits for a reply and needs you', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true }), r => makeRepo(r, 'blog', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  const { body: { id } } = await s.post('/api/task/create', { project: 'shop', description: 'Do it' });
+  // The agent's transcript ends with the question marker.
+  const home = path.join(s.root, 'claude-home', 'projects', 'p');
+  fs.mkdirSync(home, { recursive: true });
+  const ev = text => JSON.stringify({ type: 'assistant', timestamp: '2026-01-01T00:00:00Z', message: { content: [{ type: 'text', text }] } });
+  fs.writeFileSync(path.join(home, 'session-bg1.jsonl'), `${ev('Which page?\n\n[[turn: question]]')}\n`);
+  s.cli.set('bg1', { status: 'idle' });
+  await s.board.pollAll();
+  const shop = (await s.get('/api/tickets?project=shop')).body;
+  assert.equal(shop.agents[id].state, 'idle');
+  assert.equal(shop.agents[id].asked, true);
+  const task = shop.tasks.tickets[0];
+  assert.equal(task.status, 'drafting');
+  assert.equal(task.needsYou, true);
+  assert.equal((await s.get('/api/projects')).body.projects.find(p => p.id === 'shop').needsYou, 1);
 });
