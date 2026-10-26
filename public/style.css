@@ -515,3 +515,6 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .task-form textarea { resize: vertical; }
 .task-form textarea:focus-visible, .task-form input:focus-visible { outline: none; border-color: var(--accent); }
 .task-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+.review-findings { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 9px; border: 1px solid var(--border); font-size: 13.5px; }
+.review-findings-heading { font-weight: 600; }

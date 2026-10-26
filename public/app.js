@@ -601,6 +601,7 @@ function renderListRow(t) {
 // The agent's state on a card, as coloured text. Cards in resolved and wontfix lanes show none.
 function agentMark(a) {
   const mark = (cls, attrs, ...text) => el('span', { class: `mark ${cls}`, ...attrs }, ...text);
+  if (a.reviewing) return mark('running', { title: 'A separate agent with a fresh context is reviewing the work; it only reports findings' }, el('span', { class: 'run-dot' }), 'Reviewing');
   switch (a.state) {
     case 'starting': return mark('running', {}, el('span', { class: 'run-dot' }), 'Agent starting');
     case 'running': return mark('running', { title: `Working on ${a.branch}` }, el('span', { class: 'run-dot' }), 'Agent running');
@@ -634,6 +635,7 @@ function mergingMark(a) {
 // The agent's state as coloured text next to the Agent section's heading.
 function agentStateLabel(a) {
   const label = (state, attrs, ...text) => el('span', { class: `mark state-label ${state}`, ...attrs }, ...text);
+  if (a.reviewing) return label('running', { title: 'A separate agent with a fresh context is reviewing the work; it only reports findings' }, el('span', { class: 'run-dot' }), 'reviewing');
   switch (a.state) {
     case 'starting': return label('running', {}, el('span', { class: 'run-dot' }), 'starting');
     case 'running': return label('running', { title: `Working on ${a.branch}` }, el('span', { class: 'run-dot' }), 'running');
@@ -854,6 +856,9 @@ function actionButtons(t, a) {
     }],
     // The merge-base with the reference branch, once the detail has loaded.
     diff: () => ['Open diff in meld', { title: `git difftool -d ${(d?.changes?.base || a.base || '').slice(0, 8)} in the worktree` }, () => api('/api/agent/diff', { id: t.id })],
+    agentReview: () => ['Run agent review', refused(t.actions.agentReview, { title: 'A separate agent with a fresh context reviews the work and reports findings; the implementing agent fixes them. The task moves to implementing meanwhile' }), async () => {
+      if (await api('/api/agent/review', { id: t.id })) toast(`${label(t)}: agent review started`);
+    }],
     stop: () => ['■ Stop agent', refused(stop, { title: 'Stop the session; its conversation is kept' }), () => api('/api/agent/stop', { id: t.id })],
     attach: () => ['Copy attach command', { title: `${attachCommand(a)}: open the session in your terminal to watch it, answer prompts or reply` }, () => copy(attachCommand(a), 'attach command')],
     continue: () => ['↻ Continue agent', refused(start, { title: 'Resume the session in the background and tell it to carry on' }), () => api('/api/agent/start', { id: t.id })],
@@ -923,6 +928,7 @@ function renderAgent() {
       el('div', { class: 'muted' }, `Attach to answer: ${attachCommand(a)}`)) : null,
     a.error ? el('div', { class: 'warn-row danger' }, el('span', { class: 'warn-text' }, a.error)) : null,
     collapsed ? null : feed,
+    a.review?.state && a.review.state !== 'skipped' ? renderReview(a.review, d?.review, a.reviewing) : null,
     final ? renderReport(final, a.reviewNotes) : null,
     t.actions.reply ? renderReply(t) : null,
     renderMerge(t, a),
@@ -932,6 +938,21 @@ function renderAgent() {
       el('summary', {}, `Agent activity · ${plural(d.items.length, 'step')}`), feed) : null,
     renderWorkspace(a),
     a.processes?.length ? renderProcesses(t, a.processes, a.hostname) : null);
+}
+
+// The agent review: its activity while it runs, then its findings (the implementing agent's report below says what it fixed).
+function renderReview(review, activity, running) {
+  const findings = review.verdict === 'findings' ? review.findings : null;
+  const outcome = running ? null : review.verdict === 'clean' ? 'No findings'
+    : review.verdict === 'findings' ? null
+      : review.state === 'failed' ? `Could not start: ${review.error}`
+        : review.state === 'stopped' ? 'Stopped before it reported' : 'Ended without a verdict';
+  const feed = activity?.items.length ? renderFeed(activity.items, running) : null;
+  return el('div', { class: 'review-findings', 'data-keep': 'review' },
+    el('div', { class: 'review-findings-heading' }, `Agent review${review.round > 1 ? ` · round ${review.round}` : ''}`,
+      running ? el('span', { class: 'hint' }, ' · only reports findings, changes no files') : null),
+    findings ? markdownDiv('agent-summary', findings) : outcome ? el('div', { class: 'muted' }, outcome) : null,
+    running ? feed : feed ? el('details', { class: 'activity', 'data-keep': 'review-activity' }, el('summary', {}, `Review activity · ${plural(activity.items.length, 'step')}`), feed) : null);
 }
 
 // The agent's branch, preview host, worktree and reference branch (workspaceRows in view.js); a click copies the value.

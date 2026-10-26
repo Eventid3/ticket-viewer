@@ -25,7 +25,7 @@
   function rowMarks(t, a) {
     const active = !DONE.has(t.status);
     return {
-      running: active && ['running', 'starting'].includes(a?.state),
+      running: active && (['running', 'starting'].includes(a?.state) || !!a?.reviewing),
       done: active && a?.state === 'done',
       needsYou: active && !!t.needsYou,
     };
@@ -107,7 +107,7 @@
   // The top bar's counts: agents running (or starting) and tickets waiting for review.
   function liveCounts(tickets, agents) {
     return {
-      running: tickets.filter(t => ['running', 'starting'].includes(agents?.[t.id]?.state)).length,
+      running: tickets.filter(t => ['running', 'starting'].includes(agents?.[t.id]?.state) || agents?.[t.id]?.reviewing).length,
       review: tickets.filter(t => ['plan-review', 'ready-for-review'].includes(t.status)).length,
     };
   }
@@ -117,7 +117,7 @@
   // app.js disables a refused one with the server's reason. `note` is the muted text shown instead of buttons.
   function headerActions(t, a) {
     const { start, stop, resolveConflicts, mergeByHand, moves } = t.actions;
-    const busy = ['starting', 'running', 'waiting'].includes(a?.state);
+    const busy = ['starting', 'running', 'waiting'].includes(a?.state) || !!a?.reviewing;
     const buttons = [];
     const add = (name, style = '', when = true) => { if (when) buttons.push({ name, style }); };
     if (t.status === 'resolved') return { buttons, note: 'Resolved' };
@@ -132,6 +132,7 @@
     } else if (t.status === 'ready-for-review' && a) {
       add('approve', 'green', !!moves.resolved);
       add('diff');
+      add('agentReview', '', !!t.actions.agentReview);
       add('attach', '', !!a.bgId && !attachFirst);
     } else if (working && t.needsYou) {
       add('attach', 'primary', !!a?.bgId);
@@ -215,6 +216,7 @@
 
   // The Agent section's heading for agent `a` (null: no agent).
   function agentHeading(a) {
+    if (a?.reviewing) return 'Agent review is running';
     switch (a?.state) {
       case undefined: return 'Agent';
       case 'done': return 'What the agent did';

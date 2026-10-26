@@ -879,3 +879,12 @@ test('turnMarker reads the plan marker; a plan marker without a plan in the file
   assert.equal(agents.get(ID).state, 'idle');
   assert.equal(agents.get(ID).planned, false);
 });
+
+test('reviewMarker reads the verdict on the last line; reviewFindings drops it', async () => {
+  const { reviewMarker, reviewFindings } = await import('../lib/agents.mjs');
+  assert.equal(reviewMarker('- a.js:1 bad\n\n[[review: findings]]'), 'findings');
+  assert.equal(reviewMarker('Fine.\n[[review: clean]]  \n'), 'clean');
+  assert.equal(reviewMarker('[[review: clean]]\nthen more'), null);
+  assert.equal(reviewMarker('no verdict'), null);
+  assert.equal(reviewFindings('- a.js:1 bad\n\n[[review: findings]]'), '- a.js:1 bad');
+});

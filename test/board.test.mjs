@@ -674,9 +674,140 @@ test('task review: implementing ends in ready-for-review on commits or the done 
   await implementing(b);
   await running();
   await ends('Done.', true);
+  assert.equal((await task(b)).status, 'implementing', 'the first implementation with commits is reviewed by an agent first');
+  await ends('Fine.\n\n[[review: clean]]');
   assert.equal((await task(b)).status, 'ready-for-review');
   assert.equal((await move(b, 'resolved')).status, 200);
   assert.equal((await task(b)).status, 'resolved');
-  assert.equal(s.cli.sessions.at(-1).state, 'stopped');
+  assert.equal(s.cli.sessions.find(x => x.id === s.cli.calls.at(-2).id).state, 'stopped', 'the implementing session, not the reviewer before it');
   assert.equal((await move(b, 'wontfix')).status, 409);
+});
+
+test('agent review: the first implementation with commits starts a reviewer; findings resume the agent, none move on; Run agent review repeats it; stop stops both', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  const home = path.join(s.root, 'claude-home', 'projects', 'p');
+  fs.mkdirSync(home, { recursive: true });
+  const ev = text => JSON.stringify({ type: 'assistant', timestamp: '2026-01-01T00:00:00Z', message: { content: [{ type: 'text', text }] } });
+  // The newest session ends its turn, optionally after committing in its worktree.
+  const ends = async (text, commitWork) => {
+    const call = s.cli.calls.at(-1);
+    if (commitWork) commit(call.cwd, 'work');
+    fs.writeFileSync(path.join(home, `session-${call.id}.jsonl`), `${ev(text)}\n`);
+    s.cli.set(call.id, { status: 'idle' });
+    await s.board.pollAll();
+  };
+  const running = async () => { s.cli.set(s.cli.sessions.at(-1).id, { status: 'running' }); await s.board.pollAll(); };
+  const task = async id => (await s.get('/api/tickets?project=shop')).body.tasks.tickets.find(x => x.id === id);
+  const move = (id, to, notes) => s.post('/api/move', { project: 'shop', id, to, notes });
+  const review = id => s.post('/api/agent/review', { project: 'shop', id });
+  const record = async id => (await s.get(`/api/agent?project=shop&id=${id}`)).body;
+
+  const { body: { id } } = await s.post('/api/task/create', { project: 'shop', description: 'Do it' });
+  fs.appendFileSync(path.join(s.root, 'shop', '.scratch', 'tasks', id.split('/')[1]), '\n## Plan\n\n- [ ] Step\n');
+  await ends('Plan.\n\n[[turn: plan]]');
+  assert.equal((await move(id, 'implementing')).status, 200);
+  assert.equal((await review(id)).status, 409, 'not offered while implementing');
+  await running();
+
+  // The first implementation with commits starts the review instead of moving the task.
+  await ends('Implemented.\n\n[[turn: done]]', true);
+  const implementer = s.cli.calls.at(-2);
+  const reviewer = s.cli.calls.at(-1);
+  assert.match(reviewer.args[0], /^\/code-review since [0-9a-f]{40}\n/);
+  assert.match(reviewer.args[0], /only report findings.*Do not change any files/s);
+  assert.equal(reviewer.cwd, implementer.cwd, 'in the task\'s worktree');
+  assert.notEqual(reviewer.args.indexOf('-n'), -1);
+  assert.match(reviewer.args[reviewer.args.indexOf('-n') + 1], /^review of task /);
+  let tk = await task(id);
+  assert.equal(tk.status, 'implementing');
+  assert.equal((await s.get('/api/tickets?project=shop')).body.agents[id].reviewing, true, 'card and panel show reviewing');
+  assert.equal(tk.actions.stop.ok, true);
+  assert.equal((await move(id, 'ready-for-review')).status, 409);
+
+  // Its final message is the findings; the implementing session is resumed with them.
+  await ends('- src/a.js:3 does the wrong thing\n\n[[review: findings]]');
+  const resumeCall = s.cli.calls.at(-1);
+  assert.equal(resumeCall.args[0], '--resume');
+  assert.match(resumeCall.args[2], /does the wrong thing/);
+  assert.doesNotMatch(resumeCall.args[2], /\[\[review/);
+  tk = await task(id);
+  assert.equal(tk.status, 'implementing');
+  let rec = await record(id);
+  assert.equal(rec.record.reviewing, false);
+  assert.equal(rec.record.review.verdict, 'findings');
+  assert.match(rec.record.review.findings, /^- src\/a\.js:3 does the wrong thing$/);
+
+  // Once that turn ends the task is yours; no second automatic review.
+  const calls = s.cli.calls.length;
+  await running();
+  await ends('Fixed it.\n\n[[turn: done]]', true);
+  assert.equal((await task(id)).status, 'ready-for-review');
+  assert.equal(s.cli.calls.length, calls);
+  assert.match((await record(id)).record.review.findings, /wrong thing/, 'findings stay next to the fixes');
+
+  // Run agent review: another round; refused while a session is busy; no findings move straight on.
+  assert.equal((await review(id)).status, 200);
+  assert.equal((await task(id)).status, 'implementing');
+  assert.equal((await record(id)).record.review.round, 2);
+  assert.equal((await review(id)).status, 409);
+  assert.equal((await move(id, 'resolved')).status, 409);
+  const before = s.cli.calls.length;
+  await ends('Looks right.\n\n[[review: clean]]');
+  assert.equal(s.cli.calls.length, before, 'nothing to fix: no resume');
+  assert.equal((await task(id)).status, 'ready-for-review');
+  assert.equal((await record(id)).record.review.verdict, 'clean');
+  assert.equal((await record(id)).record.review.findings, null);
+
+  // Stopping the agent stops a running review too, and the task moves on.
+  assert.equal((await review(id)).status, 200);
+  const stopRes = await s.post('/api/agent/stop', { project: 'shop', id });
+  assert.equal(stopRes.status, 200);
+  assert.equal(s.cli.sessions.at(-1).state, 'stopped');
+  assert.equal((await record(id)).record.reviewing, false);
+  assert.equal((await task(id)).status, 'ready-for-review');
+});
+
+test('agent review: a first turn without commits skips it, so a later commit goes straight to ready-for-review; a reviewer that fails to start hands the task on', async t => {
+  const s = await setup({ projects: [r => makeRepo(r, 'shop', { gitRepo: true })] });
+  t.after(() => s.board.close());
+  const home = path.join(s.root, 'claude-home', 'projects', 'p');
+  fs.mkdirSync(home, { recursive: true });
+  const ev = text => JSON.stringify({ type: 'assistant', timestamp: '2026-01-01T00:00:00Z', message: { content: [{ type: 'text', text }] } });
+  const ends = async (text, commitWork) => {
+    const call = s.cli.calls.at(-1);
+    if (commitWork) commit(call.cwd, 'work');
+    fs.writeFileSync(path.join(home, `session-${call.id}.jsonl`), `${ev(text)}\n`);
+    s.cli.set(call.id, { status: 'idle' });
+    await s.board.pollAll();
+  };
+  const running = async () => { s.cli.set(s.cli.sessions.at(-1).id, { status: 'running' }); await s.board.pollAll(); };
+  const task = async id => (await s.get('/api/tickets?project=shop')).body.tasks.tickets.find(x => x.id === id);
+  const open = async () => {
+    const { body: { id } } = await s.post('/api/task/create', { project: 'shop', description: 'Do it' });
+    fs.appendFileSync(path.join(s.root, 'shop', '.scratch', 'tasks', id.split('/')[1]), '\n## Plan\n\n- [ ] Step\n');
+    await ends('Plan.\n\n[[turn: plan]]');
+    await s.post('/api/move', { project: 'shop', id, to: 'implementing' });
+    await running();
+    return id;
+  };
+
+  const a = await open();
+  await ends('Nothing to change.\n\n[[turn: done]]');
+  assert.equal((await task(a)).status, 'ready-for-review');
+  const calls = s.cli.calls.length;
+  await s.post('/api/move', { project: 'shop', id: a, to: 'implementing', notes: '' });
+  await running();
+  await ends('Changed.', true);
+  assert.equal((await task(a)).status, 'ready-for-review');
+  assert.equal(s.cli.calls.length, calls + 1, 'only the resume, no reviewer');
+
+  const b = await open();
+  const bg = s.cli.calls.at(-1);
+  commit(bg.cwd, 'work');
+  const real = s.cli.background;
+  s.cli.failWith = 'no capacity';
+  await ends('Done.\n\n[[turn: done]]');
+  s.cli.failWith = null;
+  assert.equal((await task(b)).status, 'ready-for-review');
 });
