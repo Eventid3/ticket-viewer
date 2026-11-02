@@ -147,6 +147,11 @@ test('resolved: no buttons, a muted Resolved note', () => {
   assert.equal(headerActions(tk('needs-info'), null).note, null);
 });
 
+test('resolved with a worktree to merge: Copy merge command beside the Resolved note', () => {
+  const r = headerActions(tk('resolved', { copyMerge: ok }), { state: 'stopped', bgId: 'b' });
+  assert.deepEqual(r, { buttons: [{ name: 'copyMerge', style: '' }], note: 'Resolved' });
+});
+
 test('an agent that needs you: Copy attach command is primary', () => {
   const waiting = tk('claimed', { stop: ok, moves: { 'ready-for-agent': { ok: false, why: 'Stop the agent first' } } }, { needsYou: true });
   assert.deepEqual(names(headerActions(waiting, { state: 'waiting', bgId: 'b' })), ['attach:primary', 'stop:stop']);

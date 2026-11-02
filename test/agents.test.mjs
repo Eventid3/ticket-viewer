@@ -64,6 +64,14 @@ test('starts /implement as a background session in a worktree inside the repo', 
   assert.deepEqual(args.slice(1), ['-n', 'ticket 01-a', '--permission-mode', 'auto', '--add-dir', path.dirname(ticket)]);
 });
 
+test('the agent view says whether its worktree still exists, for copying the merge command after Approve', async () => {
+  const { repo, agents, ticket } = setup();
+  const r = await agents.start(ID, ticket);
+  assert.equal(agents.get(ID).worktreeExists, true);
+  git(repo, 'worktree', 'remove', '--force', r.worktree);
+  assert.equal(agents.get(ID).worktreeExists, false);
+});
+
 test('calls onWorktree with the worktree and base once the worktree exists, before the session starts', async () => {
   const { repo, cli, ticket } = setup();
   const seen = [];

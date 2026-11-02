@@ -266,8 +266,10 @@ function nextCommand(t) {
   return null;
 }
 
-// Toasts "Copied <what>: <text>", or just "Copied <what>" with `showText` false, for a value that's on screen already.
-async function copy(text, what, showText = true) {
+// Toasts "Copied <what>: <text>", or just "Copied <what>" with `showText` false, for a value that's on screen already;
+// `quiet` toasts nothing, for a caller that reports the outcome itself. Resolves to whether it copied.
+// Call it in the click handler before any await: browsers only allow writing the clipboard shortly after a click.
+async function copy(text, what, { showText = true, quiet = false } = {}) {
   try {
     await navigator.clipboard.writeText(text);
   } catch {
@@ -277,9 +279,9 @@ async function copy(text, what, showText = true) {
     ta.select();
     const ok = document.execCommand('copy');
     ta.remove();
-    if (!ok) { toast(`Could not copy ${what}`); return false; }
+    if (!ok) { if (!quiet) toast(`Could not copy ${what}`); return false; }
   }
-  toast(showText ? `Copied ${what}: ${text}` : `Copied ${what}`);
+  if (!quiet) toast(showText ? `Copied ${what}: ${text}` : `Copied ${what}`);
   return true;
 }
 
@@ -846,14 +848,20 @@ function actionButtons(t, a) {
   const d = state.detail?.id === t.id ? state.detail : null;
   return {
     approve: () => ['✓ Approve', refused(moves.resolved, { title: `Mark resolved, stop the session and its worktree processes, and copy the command that merges ${a.branch} into ${a.ref || 'the branch you are on'}` }), async () => {
+      // Copy in the click itself: the browser only allows it shortly after the click, and the move can take seconds
+      // (it stops the session and the worktree's processes). Not awaited before the move, so the copy can't delay it.
+      const copying = copy(mergeCommand(a), 'merge command', { quiet: true });
       const conflict = a.conflict;
-      const result = await moveTicket(t, 'resolved');
-      if (!result) return;
-      // Copying shows its own toast, so repeat the stopped count and any merge conflict in it.
+      const result = await request('/api/move', { id: t.id, to: 'resolved' }).catch(e => ({ error: e.message }));
+      const copied = await copying;
+      if (result.error) {
+        toast(`Not resolved: ${result.error}${copied ? ' · don\'t run the copied merge command yet' : ''}`);
+        return;
+      }
       const warning = conflict ? ` · ⚔ it conflicts with ${a.ref} in ${plural(conflict.files.length, 'file')}` : '';
-      const copied = await copy(mergeCommand(a), 'merge command');
-      if (result.stopped || warning) toast(`${copied ? 'Copied merge command' : 'Could not copy merge command'}${warning}${stoppedNote(result)}`);
+      toast(`${label(t)} → resolved · ${copied ? 'copied merge command' : 'could not copy the merge command: use Copy merge command'}${warning}${stoppedNote(result)}`);
     }],
+    copyMerge: () => ['Copy merge command', { title: mergeCommand(a) }, () => copy(mergeCommand(a), 'merge command')],
     // The merge-base with the reference branch, once the detail has loaded.
     diff: () => ['Open diff in meld', { title: `git difftool -d ${(d?.changes?.base || a.base || '').slice(0, 8)} in the worktree` }, () => api('/api/agent/diff', { id: t.id })],
     agentReview: () => ['Run agent review', refused(t.actions.agentReview, { title: 'A separate agent with a fresh context reviews the work and reports findings; the implementing agent fixes them. The task moves to implementing meanwhile' }), async () => {
@@ -964,7 +972,7 @@ function renderWorkspace(a) {
     el('div', { class: 'workspace-table' }, rows.flatMap(r => [
       el('div', { class: 'workspace-label' }, r.label),
       r.value
-        ? el('button', { class: 'workspace-value', type: 'button', title: `Copy "${r.value}"`, onclick: () => copy(r.value, r.what, false) }, r.value)
+        ? el('button', { class: 'workspace-value', type: 'button', title: `Copy "${r.value}"`, onclick: () => copy(r.value, r.what, { showText: false }) }, r.value)
         : el('div', { class: 'workspace-value empty', title: r.why }, r.empty),
     ])));
 }

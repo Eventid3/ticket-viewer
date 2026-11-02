@@ -56,6 +56,11 @@ const cases = [
   ['finish while the agent works in the worktree', ticket('claimed'), agent('running', { merging: merging(0) }), git, 'finishMerge', /agent is working/],
   ['finish without a merge', ticket('claimed'), agent('idle'), git, 'finishMerge', /No merge in progress/],
 
+  // A resolved ticket's merge command can be copied again with a fresh click while its worktree is there to merge.
+  ['copy the merge command of a resolved ticket', ticket('resolved'), agent('stopped', { branch: 'ticket/01-a', worktreeExists: true }), git, 'copyMerge', null],
+  ['no merge command once the worktree is gone', ticket('resolved'), agent('stopped', { branch: 'ticket/01-a', worktreeExists: false }), git, 'copyMerge', /worktree is gone/],
+  ['no merge command before it is resolved', ticket('ready-for-review'), agent('done', { branch: 'ticket/01-a', worktreeExists: true }), git, 'copyMerge', /not resolved/],
+
   // A worktree mid-merge is yours: no agent gets it and the ticket isn't closed until you finish or abort.
   ['approve mid-merge', ticket('ready-for-review'), agent('done', { merging: merging(0) }), git, 'moves.resolved', /Finish or abort the merge first/],
   ['send back mid-merge', ticket('ready-for-review'), agent('done', { merging: merging(0) }), git, 'moves.claimed', /Finish or abort the merge first/],
@@ -91,6 +96,12 @@ test('start says whether it continues the agent\'s session', () => {
   assert.equal(ticketActions(ticket('claimed'), agent('idle'), git).start.resume, true);
   assert.equal(ticketActions(ticket('claimed'), agent('idle', { bgId: undefined }), git).start.resume, false, 'records from before background sessions start over');
   assert.equal(ticketActions(ticket('ready-for-agent'), null, git).start.resume, false);
+});
+
+test('copyMerge is shown only for a resolved ticket with a worktree to merge', () => {
+  assert.deepEqual(ticketActions(ticket('resolved'), agent('stopped', { branch: 'b', worktreeExists: true }), git).copyMerge, { ok: true, why: null });
+  assert.equal(ticketActions(ticket('resolved'), agent('stopped', { branch: 'b', worktreeExists: false }), git).copyMerge, undefined);
+  assert.equal(ticketActions(ticket('resolved'), null, git).copyMerge, undefined);
 });
 
 test('a ticket without an agent in claimed has nothing to start', () => {

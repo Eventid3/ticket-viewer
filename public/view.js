@@ -120,7 +120,11 @@
     const busy = ['starting', 'running', 'waiting'].includes(a?.state) || !!a?.reviewing;
     const buttons = [];
     const add = (name, style = '', when = true) => { if (when) buttons.push({ name, style }); };
-    if (t.status === 'resolved') return { buttons, note: 'Resolved' };
+    if (t.status === 'resolved') {
+      // Copying the merge command again, in case Approve's copy failed, while the worktree is there to merge.
+      add('copyMerge', '', !!t.actions.copyMerge && !!a);
+      return { buttons, note: 'Resolved' };
+    }
     // Outside claimed, an agent that needs you still comes first: attaching leads, as the only primary action.
     // A task's work lane is implementing: the same buttons as claimed, minus the ticket-only moves (the server leaves those out).
     const working = t.status === 'claimed' || t.status === 'implementing';
