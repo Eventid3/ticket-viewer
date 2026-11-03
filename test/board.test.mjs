@@ -518,6 +518,14 @@ test('a task whose agent asked a question stays in drafting, waits for a reply a
   assert.equal(task.status, 'drafting');
   assert.equal(task.needsYou, true);
   assert.equal((await s.get('/api/projects')).body.projects.find(p => p.id === 'shop').needsYou, 1);
+
+  // Resolved without answering (e.g. by editing the file): the open question no longer needs you.
+  const file = path.join(s.root, 'shop', '.scratch', id);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^Status: drafting$/m, 'Status: resolved'));
+  const after = (await s.get('/api/tickets?project=shop')).body;
+  assert.equal(after.agents[id].asked, true);
+  assert.equal(after.tasks.tickets[0].needsYou, false);
+  assert.equal((await s.get('/api/projects')).body.projects.find(p => p.id === 'shop').needsYou, 0);
 });
 
 test('POST /api/agent/reply resumes an asking agent with the answer, keeps the task in drafting and refuses empty or untimely replies', async t => {

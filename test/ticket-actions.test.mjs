@@ -127,6 +127,15 @@ test('needs you: an agent waiting on a prompt or ended without committing, outsi
   assert.equal(needsYou(ticket('claimed'), null), false);
 });
 
+test('needs you: never once the ticket or task is finished, even with a question open', () => {
+  const task = status => ({ id: 'tasks/01-a.md', status, blocked: false, openBlockers: [] });
+  for (const status of ['resolved', 'wontfix']) {
+    assert.equal(needsYou(ticket(status), agent('idle', { asked: true })), false, `${status} ticket, question asked`);
+    assert.equal(needsYou(ticket(status), agent('waiting')), false, `${status} ticket, waiting`);
+    assert.equal(needsYou(task(status), agent('idle', { asked: true })), false, `${status} task, question asked`);
+  }
+});
+
 test('asked: only an idle agent whose turn ended with a question', () => {
   assert.equal(asked(agent('idle', { asked: true })), true);
   assert.equal(asked(agent('idle', { asked: false })), false);
