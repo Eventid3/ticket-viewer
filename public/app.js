@@ -206,16 +206,37 @@ async function loadStructure(id, rendering = false) {
     result = res.ok ? { summary: body } : { error: body.error || `Request failed (${res.status})` };
   } catch (e) { result = { error: e.message }; }
   if (state.structure?.id !== id) return; // another ticket was opened meanwhile
-  Object.assign(state.structure, { loading: false }, result);
+  Object.assign(state.structure, { loading: false, thumbs: null, thumbsLoading: false, thumbsError: null, thumbsRequest: (state.structure.thumbsRequest || 0) + 1 }, result);
+  renderAgent();
+  if (result.summary?.flows?.changed) loadThumbnails(id);
+}
+
+// The first flows as thumbnails, asked for once the summary is in (codemap has both snapshots by then). A flow's own
+// failure is its `error`; a failure of the whole request is `thumbsError`.
+async function loadThumbnails(id) {
+  const st = state.structure;
+  if (st?.id !== id || st.thumbs || st.thumbsLoading) return;
+  const request = st.thumbsRequest = (st.thumbsRequest || 0) + 1;
+  Object.assign(st, { thumbsLoading: true, thumbsError: null });
+  renderAgent();
+  let result;
+  try {
+    const res = await fetch(`/api/codemap/thumbnails?${projectQuery(id)}`);
+    const body = await res.json().catch(() => ({}));
+    result = res.ok ? { thumbs: body.items || [] } : { thumbsError: body.error || `Request failed (${res.status})` };
+  } catch (e) { result = { thumbsError: e.message }; }
+  // Another ticket was opened, or a summary refresh started a newer request: this answer is out of date.
+  if (state.structure?.id !== id || state.structure.thumbsRequest !== request) return;
+  Object.assign(state.structure, { thumbsLoading: false }, result);
   renderAgent();
 }
 
-async function openStructureDiff(t) {
+async function openStructureDiff(t, segment) {
   if (state.structure?.id !== t.id) return;
   Object.assign(state.structure, { opening: true, viewError: null });
   renderAgent();
   toast('Opening structure diff…');
-  const error = await post('/api/codemap/view', { id: t.id });
+  const error = await post('/api/codemap/view', { id: t.id, ...(segment ? { segment } : {}) });
   if (state.structure?.id !== t.id) return;
   Object.assign(state.structure, { opening: false, viewError: error });
   if (error) toast(`Could not open structure diff: ${error}`);
@@ -1164,7 +1185,20 @@ function renderStructure(t) {
         ? s.groups.map(g => el('span', { class: 'badge' + (g.kind === 'other-change' ? '' : ' structural') }, `${g.label}: ${g.count}`))
         : el('span', { class: 'muted' }, 'No structural changes')) : null,
     s?.flows ? el('div', { class: 'structure-flows muted' }, s.flows.line) : null,
+    s?.flows?.changed ? renderThumbnails(t, st) : null,
     s?.warning ? el('div', { class: 'badge needs-you', title: s.warning, tabindex: 0 }, s.warning) : null);
+}
+
+// Thumbnails of the first flows under the flows line, each as wide as the panel; clicking one opens codemap on that flow.
+// The SVG goes in an <img> as a data URL, so nothing in it can run or restyle the board.
+function renderThumbnails(t, st) {
+  if (st.thumbsError) return changeWarning(`Could not render flow thumbnails: ${st.thumbsError}`, () => { st.thumbs = null; loadThumbnails(t.id); });
+  if (st.thumbsLoading) return el('div', { class: 'muted' }, 'drawing flows…');
+  if (!st.thumbs?.length) return null;
+  return el('div', { class: 'thumbs' }, st.thumbs.map(item => item.error
+    ? changeWarning(`${item.label}: ${item.error}`, () => { st.thumbs = null; loadThumbnails(t.id); })
+    : el('button', { class: 'thumb', title: `Open ${item.label} in codemap`, onclick: () => openStructureDiff(t, item.id) },
+      el('img', { alt: item.label, src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(item.svg)}` }))));
 }
 
 // A keydown handler that runs `fn` on Enter or Space, as a click would.

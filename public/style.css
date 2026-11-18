@@ -420,6 +420,10 @@ input::placeholder, textarea::placeholder { color: oklch(0.55 0.008 260); }
 .structure-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .structure-title { font-weight: 600; }
 .structure .icon-btn { font-size: 14px; padding: 0 6px; }
+.thumbs { display: flex; flex-direction: column; gap: 8px; }
+.thumb { display: block; width: 100%; padding: 0; border: 1px solid var(--border, oklch(0.28 0.006 260)); border-radius: 7px; background: none; cursor: pointer; overflow: hidden; }
+.thumb:hover, .thumb:focus-visible { border-color: var(--s-ready-for-review); }
+.thumb img { display: block; width: 100%; height: auto; max-height: 260px; object-fit: contain; object-position: top left; }
 .structure-groups { display: flex; flex-wrap: wrap; gap: 4px; }
 .badge.structural { border-color: var(--s-ready-for-review); color: var(--s-ready-for-review); }
 /* codemap's reference warning can be long: one line cut with "…", the whole text on hover or keyboard focus. */
