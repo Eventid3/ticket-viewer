@@ -192,7 +192,7 @@ async function loadDetail() {
   if (state.detail?.record?.busy) loadDetail.timer = setTimeout(loadDetail, 3000);
 }
 
-// codemap's structure diff for a ticket in review: counts per group and flagged entries, loaded on demand.
+// codemap's structure diff for a ticket in review: counts per group, loaded on demand.
 function wantsStructure(t) { return !!(state.data.codemap && t?.status === 'ready-for-review' && agentOf(t)); }
 
 // `rendering`: called from renderAgent, which draws the loading state itself.
@@ -1017,7 +1017,7 @@ function renderReport(message, reviewNotes) {
     markdownDiv('agent-summary rest', rest));
 }
 
-// Sending a ticket in review back to its agent, with notes; the structure diff in the Changes block adds its flagged notes.
+// Sending a ticket in review back to its agent, with notes.
 function renderSendBack(t) {
   const plan = t.status === 'plan-review';
   const to = plan ? 'drafting' : isTask(t) ? 'implementing' : 'claimed';
@@ -1123,7 +1123,7 @@ function renderChanges(t, a, changes) {
       headBtn(make.diff()),
       structure ? headBtn([state.structure?.opening ? 'Opening structure diff…' : 'Structure diff', {
         disabled: !!state.structure?.opening,
-        title: `codemap view: the structural changes since ${changes.base.slice(0, 8)}, to mark OK or Flag`,
+        title: `codemap view: the structural changes since ${changes.base.slice(0, 8)}, to read and copy references from`,
       }, () => openStructureDiff(t)]) : null),
     commits.length ? el('div', { class: 'change-commits' }, commits.map(c => el('div', { class: 'change-commit' },
       el('code', { class: 'sha' }, c.sha), el('span', {}, c.subject)))) : null,
@@ -1147,39 +1147,23 @@ function changeWarning(text, retry) {
     btn('Retry', {}, retry));
 }
 
-// The Changes block's codemap row: counts per review-list group, flagged entries, and copying their notes to Send back.
+// The Changes block's codemap row: counts per review-list group.
 function renderStructure(t) {
   const st = state.structure?.id === t.id ? state.structure : {};
   const s = st.summary;
-  const copyNotes = () => {
-    const current = (state.notes[t.id] || '').trim();
-    const missing = s.notes.filter(n => !current.includes(n));
-    if (!missing.length) return toast('The flagged notes are already in your notes');
-    const text = missing.map(n => `- ${n}`).join('\n');
-    state.notes[t.id] = current ? `${current}\n\n${text}` : text;
-    const notes = $('sendBackNotes');
-    if (notes) { notes.value = state.notes[t.id]; notes.focus(); }
-    toast(`Copied ${plural(missing.length, 'flagged note')} into the notes`);
-  };
   return el('div', { class: 'structure' },
     el('div', { class: 'structure-head' },
       el('span', { class: 'structure-title' }, 'Structure diff'),
       st.loading ? el('span', { class: 'muted' }, s ? 'refreshing…' : 'computing… (the first run extracts both snapshots)') : null,
-      s && !st.loading && s.groups.length ? el('span', { class: 'muted' }, s.unmarked ? `${plural(s.unmarked, 'item')} not marked yet` : 'all marked') : null,
       el('span', { class: 'spacer' }),
-      el('button', { class: 'icon-btn', title: 'Refresh the summary, e.g. after marking items in codemap', disabled: !!st.loading, onclick: () => loadStructure(t.id) }, '↻')),
+      el('button', { class: 'icon-btn', title: 'Refresh the summary', disabled: !!st.loading, onclick: () => loadStructure(t.id) }, '↻')),
     st.viewError ? changeWarning(`Could not open structure diff: ${st.viewError}`, () => openStructureDiff(t)) : null,
     st.error ? changeWarning(`Could not get the codemap summary: ${st.error}`, () => loadStructure(t.id)) : null,
     s ? el('div', { class: 'structure-groups' },
       s.groups.length
         ? s.groups.map(g => el('span', { class: 'badge' + (g.kind === 'other-change' ? '' : ' structural') }, `${g.label}: ${g.count}`))
         : el('span', { class: 'muted' }, 'No structural changes')) : null,
-    s?.warning ? el('div', { class: 'badge needs-you', title: s.warning, tabindex: 0 }, s.warning) : null,
-    s?.flagged.length ? el('ul', { class: 'flagged' }, s.flagged.map(f => el('li', { title: f.title }, f.note))) : null,
-    s ? el('div', { class: 'agent-actions' },
-      btn(`⇣ Copy ${plural(s.notes.length, 'flagged note')} to Send back`, {
-        disabled: !s.notes.length, title: s.notes.length ? 'Add the flagged items to the Send back notes below' : 'Flag items in the structure diff to get notes here',
-      }, copyNotes)) : null);
+    s?.warning ? el('div', { class: 'badge needs-you', title: s.warning, tabindex: 0 }, s.warning) : null);
 }
 
 // A keydown handler that runs `fn` on Enter or Space, as a click would.
@@ -1434,7 +1418,7 @@ document.addEventListener('keydown', e => {
     if (next) copy(next.text, next.what);
   }
 });
-// Coming back from the codemap tab: pick up the items you marked there.
+// Coming back from the codemap tab: refresh the summary.
 function refreshStructure() {
   const t = state.ticket && findTicket(state.ticket);
   if (document.visibilityState === 'visible' && state.structure?.id === t?.id && !state.structure.loading && wantsStructure(t)) loadStructure(t.id);
