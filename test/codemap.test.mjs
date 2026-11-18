@@ -25,19 +25,18 @@ const SUMMARY = {
   after: { commit: 'bbb', dirty: true },
   counts: { 'new-coupling': 2, 'surface-change': 1, 'other-change': 4 },
   entries: [
-    { id: 'c1', kind: 'new-coupling', title: 'New coupling: Archive → Logbooks', mark: { verdict: 'flag', note: 'use the interface' }, note: 'ArchiveController now injects LogbookService (Archive → Logbooks, new coupling): use the interface' },
-    { id: 'c2', kind: 'new-coupling', title: 'New coupling: Archive → Users', mark: { verdict: 'ok' } },
+    { id: 'c1', kind: 'new-coupling', title: 'New coupling: Archive → Logbooks', text: 'ArchiveController now injects LogbookService (Archive → Logbooks, new coupling)' },
+    { id: 'c2', kind: 'new-coupling', title: 'New coupling: Archive → Users' },
     { id: 's1', kind: 'surface-change', title: 'Surface change: Foo (1 added)' },
     { id: 'o1', kind: 'other-change', title: 'Added type Bar' },
   ],
-  notes: ['ArchiveController now injects LogbookService (Archive → Logbooks, new coupling): use the interface'],
 };
 
 test('is unavailable when codemap is not on PATH', () => {
   assert.equal(createCodemap({ env: { PATH: fs.mkdtempSync(path.join(os.tmpdir(), 'empty-')) } }), null);
 });
 
-test('summary runs diff --json for the worktree and base, and returns groups and flagged entries', async () => {
+test('summary runs diff --json for the worktree and base, and returns the counts per group', async () => {
   const fake = fakeCodemap();
   const codemap = createCodemap({ env: { ...fake.env, FAKE_OUT: JSON.stringify(SUMMARY) } });
   const s = await codemap.summary('/wt', 'aaa');
@@ -48,9 +47,7 @@ test('summary runs diff --json for the worktree and base, and returns groups and
     { kind: 'surface-change', label: 'Surface changes', count: 1 },
     { kind: 'other-change', label: 'Other changes', count: 4 },
   ]);
-  assert.deepEqual(s.flagged, [{ title: 'New coupling: Archive → Logbooks', note: SUMMARY.notes[0] }]);
-  assert.deepEqual(s.notes, SUMMARY.notes);
-  assert.equal(s.unmarked, 2);
+  assert.deepEqual(Object.keys(s).sort(), ['groups', 'warning']);
 });
 
 test('summary reports the package-reference warning', async () => {

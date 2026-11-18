@@ -135,9 +135,9 @@ When testing the app in a browser from a git worktree, open it at `<feature>-<NN
 
 When `codemap` is on your PATH at startup, a ticket in review also gets a structure diff; without it the board works exactly as before and shows none of this. The board only runs codemap's command line and imports none of its code.
 
-- **Open structure diff** runs `codemap view --repo <worktree> --base <review base>`, which opens a browser page listing structural changes (new cycles, project references, coupling, injected concrete classes, surface changes, moves). Mark each item OK or Flag there, with a note. If codemap fails, the panel shows why.
-- The **Structure diff** section of the review panel runs `codemap diff --repo <worktree> --base <review base> --json` and shows the count per group and your flagged items. It refreshes when you come back to the board's tab, or with ↻.
-- **Copy flagged notes to Send back** adds the flagged items, in plain words with your notes, to the review notes. **Send back to agent** then works as usual.
+- **Open structure diff** runs `codemap view --repo <worktree> --base <review base>`, which opens a browser page listing structural changes (new cycles, project references, coupling, injected concrete classes, surface changes, moves). codemap is view-only: it has no marks or notes. Each entry has a **Copy reference** button that copies its plain-language text, to paste into the Send back notes. If codemap fails, the panel shows why.
+- The **Structure diff** section of the review panel runs `codemap diff --repo <worktree> --base <review base> --json` and shows the count per group. It refreshes when you come back to the board's tab, or with ↻.
+- Feedback is written in the Send back notes only; codemap collects none. **Send back to agent** works as usual.
 - When an agent starts, the board runs `codemap snapshot --repo <worktree> --commit <base>` in the background, so the structure diff opens faster later. Its result is ignored.
 
 **Stop agent** stops the session. **Continue agent** resumes it in the background and tells it to carry on. Sessions belong to Claude Code, not to the board: they keep running if you close the board, and the board picks them up again when it starts. The board's records are in `.git/ticket-viewer/agents.json`, one file per repo.
