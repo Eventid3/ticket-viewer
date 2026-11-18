@@ -92,11 +92,17 @@ test('summary words the flows counts from diff --json', async () => {
   assert.equal(s1.flows.line, '1 changed flow · 0 without annotation · 0 stale');
 });
 
-test('annotationNote names the worktree and exact base, and says to do nothing when no segment needs annotation', () => {
-  const note = createCodemap({ env: fakeCodemap().env }).annotationNote('/wt', 'abc123');
-  assert.match(note, /codemap flows --repo \/wt --base abc123/);
+test('annotationNote works from the worktree, names the base and the reference branch, and says how to annotate', () => {
+  const codemap = createCodemap({ env: fakeCodemap().env });
+  const note = codemap.annotationNote('/a path/wt', 'abc123', 'develop');
+  assert.match(note, /codemap flows --repo \. --base abc123/);
+  assert.doesNotMatch(note, /a path/);
+  assert.match(note, /codemap annotate --repo \. --base abc123/);
   assert.match(note, /before your final message with the turn marker/i);
   assert.match(note, /needsAnnotation/);
   assert.match(note, /codemap annotate --help/);
+  assert.match(note, /stdin or --file/);
   assert.match(note, /do nothing/i);
+  assert.match(note, /merged develop during this turn.*git merge-base develop HEAD.*instead/);
+  assert.doesNotMatch(codemap.annotationNote('/wt', 'abc123', null), /merge-base/);
 });
