@@ -95,7 +95,7 @@ test('summary words the flows counts from diff --json', async () => {
 test('annotationNote names the worktree and exact base, and says to do nothing when no segment needs annotation', () => {
   const note = createCodemap({ env: fakeCodemap().env }).annotationNote('/wt', 'abc123');
   assert.match(note, /codemap flows --repo \/wt --base abc123/);
-  assert.match(note, /before .*\[\[turn:/);
+  assert.match(note, /before your final message with the turn marker/i);
   assert.match(note, /needsAnnotation/);
   assert.match(note, /codemap annotate --help/);
   assert.match(note, /do nothing/i);
