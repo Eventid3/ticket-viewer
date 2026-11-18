@@ -47,7 +47,8 @@ test('summary runs diff --json for the worktree and base, and returns the counts
     { kind: 'surface-change', label: 'Surface changes', count: 1 },
     { kind: 'other-change', label: 'Other changes', count: 4 },
   ]);
-  assert.deepEqual(Object.keys(s).sort(), ['groups', 'warning']);
+  assert.deepEqual(Object.keys(s).sort(), ['flows', 'groups', 'warning']);
+  assert.equal(s.flows, null, 'older codemap output has no flows');
 });
 
 test('summary reports the package-reference warning', async () => {
@@ -78,4 +79,24 @@ test('warmUp snapshots the base commit in the background and ignores the result'
   assert.ok(Date.now() - started < 150, 'does not wait for the snapshot');
   for (let i = 0; i < 50 && !fake.calls().length; i++) await new Promise(r => setTimeout(r, 20));
   assert.deepEqual(fake.calls(), ['snapshot --repo /wt --commit aaa']);
+});
+
+test('summary words the flows counts from diff --json', async () => {
+  const fake = fakeCodemap();
+  const out = { ...SUMMARY, flows: { changed: 3, needsAnnotation: 2, missing: 1, stale: 1 } };
+  const s = await createCodemap({ env: { ...fake.env, FAKE_OUT: JSON.stringify(out) } }).summary('/wt', 'aaa');
+  assert.deepEqual(s.flows, { changed: 3, needsAnnotation: 2, missing: 1, stale: 1, line: '3 changed flows · 1 without annotation · 1 stale' });
+
+  const one = { ...SUMMARY, flows: { changed: 1, needsAnnotation: 0, missing: 0, stale: 0 } };
+  const s1 = await createCodemap({ env: { ...fake.env, FAKE_OUT: JSON.stringify(one) } }).summary('/wt', 'aaa');
+  assert.equal(s1.flows.line, '1 changed flow · 0 without annotation · 0 stale');
+});
+
+test('annotationNote names the worktree and exact base, and says to do nothing when no segment needs annotation', () => {
+  const note = createCodemap({ env: fakeCodemap().env }).annotationNote('/wt', 'abc123');
+  assert.match(note, /codemap flows --repo \/wt --base abc123/);
+  assert.match(note, /before .*\[\[turn:/);
+  assert.match(note, /needsAnnotation/);
+  assert.match(note, /codemap annotate --help/);
+  assert.match(note, /do nothing/i);
 });

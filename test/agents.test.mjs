@@ -896,3 +896,22 @@ test('reviewMarker reads the verdict on the last line; reviewFindings drops it',
   assert.equal(reviewMarker('no verdict'), null);
   assert.equal(reviewFindings('- a.js:1 bad\n\n[[review: findings]]'), '- a.js:1 bad');
 });
+
+test('the annotation note joins the start prompt and every resume, naming the review base, only when given', async () => {
+  const note = (worktree, base) => `ANNOTATE ${worktree} ${base}`;
+  const { cli, agents, ticket, repo } = setup({ annotationNote: note });
+  const r = await agents.start(ID, ticket);
+  const base = git(repo, 'rev-parse', 'HEAD');
+  assert.ok(cli.calls[0].args.join('\n').includes(`ANNOTATE ${r.worktree} ${base}`), 'start');
+  await agents.poll();
+  await agents.resume(ID, ticket, 'More please');
+  assert.ok(cli.calls.at(-1).args.join('\n').includes(`ANNOTATE ${r.worktree} ${base}`), 'resume');
+});
+
+test('without an annotation note (no codemap) the prompts carry no annotation paragraph', async () => {
+  const { cli, agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  await agents.poll();
+  await agents.resume(ID, ticket, 'More please');
+  assert.ok(cli.calls.every(c => !/codemap/i.test(c.args.join('\n'))));
+});
