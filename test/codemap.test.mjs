@@ -239,6 +239,28 @@ case "$1" in flows) cat "${fake.dir}/flows.json" ;; render) sleep 30 & echo $! >
   assert.equal(alive, false, 'the extractor stand-in was killed too');
 });
 
+test('a descendant that outlives the kill and keeps the pipes open does not hang the request; the next one starts a new job', async () => {
+  const fake = renderingCodemap(FLOWS([seg('a')]));
+  const pidFile = path.join(fake.dir, 'holder.pid');
+  fs.writeFileSync(path.join(fake.dir, 'codemap'), `#!/bin/sh
+echo "$*" >> "${fake.dir}/calls.log"
+case "$1" in
+  flows) cat "${fake.dir}/flows.json" ;;
+  render) setsid sleep 30 & echo $! > "${pidFile}"; wait ;;
+esac
+`, { mode: 0o755 });
+  const codemap = createCodemap({ env: fake.env, renderTimeoutMs: 200 });
+  try {
+    const first = await Promise.race([codemap.thumbnails('/wt', 'aaa'), new Promise(r => setTimeout(() => r('hung'), 3000))]);
+    assert.notEqual(first, 'hung', 'the request settles');
+    assert.match(first.items[0].error, /timed out after/);
+    await codemap.thumbnails('/wt', 'aaa');
+    assert.equal(fake.calls().filter(c => c.startsWith('flows')).length, 2, 'a new job ran');
+  } finally {
+    try { process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGKILL'); } catch { /* gone */ }
+  }
+});
+
 test('a render that takes too long fails with a timeout message instead of holding the panel', async () => {
   const fake = renderingCodemap(FLOWS([seg('a')]));
   fs.writeFileSync(path.join(fake.dir, 'codemap'), `#!/bin/sh
