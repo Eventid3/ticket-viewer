@@ -896,3 +896,37 @@ test('reviewMarker reads the verdict on the last line; reviewFindings drops it',
   assert.equal(reviewMarker('no verdict'), null);
   assert.equal(reviewFindings('- a.js:1 bad\n\n[[review: findings]]'), '- a.js:1 bad');
 });
+
+test('the annotation note joins the start prompt and every resume, naming the review base, only when given', async () => {
+  const note = (worktree, base, ref) => `ANNOTATE ${worktree} ${base} ${ref}`;
+  const { cli, agents, ticket, repo } = setup({ annotationNote: note });
+  const r = await agents.start(ID, ticket);
+  const base = git(repo, 'rev-parse', 'HEAD');
+  assert.ok(cli.calls[0].args.join('\n').includes(`ANNOTATE ${r.worktree} ${base} main`), 'start');
+  await agents.poll();
+  await agents.resume(ID, ticket, 'More please');
+  assert.ok(cli.calls.at(-1).args.join('\n').includes(`ANNOTATE ${r.worktree} ${base} main`), 'resume');
+});
+
+test('without an annotation note (no codemap) the prompts carry no annotation paragraph', async () => {
+  const { cli, agents, ticket } = setup();
+  await agents.start(ID, ticket);
+  await agents.poll();
+  await agents.resume(ID, ticket, 'More please');
+  assert.ok(cli.calls.every(c => !/codemap/i.test(c.args.join('\n'))));
+});
+
+test('a task gets the annotation note on start and resume too', async () => {
+  const { cli, agents, repo } = setup({ annotationNote: (w, b, ref) => `ANNOTATE ${b} ${ref}` });
+  const dir = path.join(repo, '.scratch', 'tasks');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, '01-t.md');
+  fs.writeFileSync(file, '# T\n');
+  const id = 'tasks/01-t.md';
+  const base = git(repo, 'rev-parse', 'HEAD');
+  await agents.start(id, file);
+  assert.ok(cli.calls[0].args.join('\n').includes(`ANNOTATE ${base} main`));
+  await agents.poll();
+  await agents.resume(id, file, 'More');
+  assert.ok(cli.calls.at(-1).args.join('\n').includes(`ANNOTATE ${base} main`));
+});

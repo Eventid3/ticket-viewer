@@ -47,7 +47,8 @@ test('summary runs diff --json for the worktree and base, and returns the counts
     { kind: 'surface-change', label: 'Surface changes', count: 1 },
     { kind: 'other-change', label: 'Other changes', count: 4 },
   ]);
-  assert.deepEqual(Object.keys(s).sort(), ['groups', 'warning']);
+  assert.deepEqual(Object.keys(s).sort(), ['flows', 'groups', 'warning']);
+  assert.equal(s.flows, null, 'older codemap output has no flows');
 });
 
 test('summary reports the package-reference warning', async () => {
@@ -78,4 +79,30 @@ test('warmUp snapshots the base commit in the background and ignores the result'
   assert.ok(Date.now() - started < 150, 'does not wait for the snapshot');
   for (let i = 0; i < 50 && !fake.calls().length; i++) await new Promise(r => setTimeout(r, 20));
   assert.deepEqual(fake.calls(), ['snapshot --repo /wt --commit aaa']);
+});
+
+test('summary words the flows counts from diff --json', async () => {
+  const fake = fakeCodemap();
+  const out = { ...SUMMARY, flows: { changed: 3, needsAnnotation: 2, missing: 1, stale: 1 } };
+  const s = await createCodemap({ env: { ...fake.env, FAKE_OUT: JSON.stringify(out) } }).summary('/wt', 'aaa');
+  assert.deepEqual(s.flows, { changed: 3, needsAnnotation: 2, missing: 1, stale: 1, line: '3 changed flows · 1 without annotation · 1 stale' });
+
+  const one = { ...SUMMARY, flows: { changed: 1, needsAnnotation: 0, missing: 0, stale: 0 } };
+  const s1 = await createCodemap({ env: { ...fake.env, FAKE_OUT: JSON.stringify(one) } }).summary('/wt', 'aaa');
+  assert.equal(s1.flows.line, '1 changed flow · 0 without annotation · 0 stale');
+});
+
+test('annotationNote works from the worktree, names the base and the reference branch, and says how to annotate', () => {
+  const codemap = createCodemap({ env: fakeCodemap().env });
+  const note = codemap.annotationNote('/a path/wt', 'abc123', 'develop');
+  assert.match(note, /codemap flows --repo \. --base abc123/);
+  assert.doesNotMatch(note, /a path/);
+  assert.match(note, /codemap annotate --repo \. --base abc123/);
+  assert.match(note, /before your final message with the turn marker/i);
+  assert.match(note, /needsAnnotation/);
+  assert.match(note, /codemap annotate --help/);
+  assert.match(note, /stdin or --file/);
+  assert.match(note, /do nothing/i);
+  assert.match(note, /merged develop during this turn.*git merge-base develop HEAD.*instead/);
+  assert.doesNotMatch(codemap.annotationNote('/wt', 'abc123', null), /merge-base/);
 });

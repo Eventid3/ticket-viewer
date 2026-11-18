@@ -1163,6 +1163,7 @@ function renderStructure(t) {
       s.groups.length
         ? s.groups.map(g => el('span', { class: 'badge' + (g.kind === 'other-change' ? '' : ' structural') }, `${g.label}: ${g.count}`))
         : el('span', { class: 'muted' }, 'No structural changes')) : null,
+    s?.flows ? el('div', { class: 'structure-flows muted' }, s.flows.line) : null,
     s?.warning ? el('div', { class: 'badge needs-you', title: s.warning, tabindex: 0 }, s.warning) : null);
 }
 

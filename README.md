@@ -137,6 +137,8 @@ When `codemap` is on your PATH at startup, a ticket in review also gets a struct
 
 - **Open structure diff** runs `codemap view --repo <worktree> --base <review base>`, which opens a browser page listing structural changes (new cycles, project references, coupling, injected concrete classes, surface changes, moves). codemap is view-only: it has no marks or notes. Each entry has a **Copy reference** button that copies its plain-language text, to paste into the Send back notes. If codemap fails, the panel shows why.
 - The **Structure diff** section of the review panel runs `codemap diff --repo <worktree> --base <review base> --json` and shows the count per group. It refreshes when you come back to the board's tab, or with ↻.
+- The same section shows one flows line from the `flows` counts in that JSON, e.g. "3 changed flows · 1 without annotation · 1 stale" (hidden when codemap's output has no `flows`).
+- When codemap is on PATH, the prompt the agent gets on start and on every resume (tickets and tasks) gets one extra paragraph: run `codemap flows --repo . --base <review base SHA>` before the turn marker, annotate the segments marked `needsAnnotation` (or missing or stale) with `codemap annotate` (format: `codemap annotate --help`), and do nothing when none needs it. Without codemap the prompts are unchanged.
 - Feedback is written in the Send back notes only; codemap collects none. **Send back to agent** works as usual.
 - When an agent starts, the board runs `codemap snapshot --repo <worktree> --commit <base>` in the background, so the structure diff opens faster later. Its result is ignored.
 
