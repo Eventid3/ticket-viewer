@@ -186,6 +186,59 @@ test('thumbnails reject with codemap\'s message when flows fails, and old output
   await assert.rejects(createCodemap({ env: { ...fake.env, FAKE_OUT: '{}' } }).thumbnails('/wt', 'aaa'), /flows --json/);
 });
 
+test('a changed argument or label alone draws the flow again', async () => {
+  const withStep = label => FLOWS([{ ...seg('a'), steps: [{ kind: 'call', id: 'a/0', label }] }]);
+  const fake = renderingCodemap(withStep('Save(x)'));
+  const codemap = createCodemap({ env: fake.env });
+  await codemap.thumbnails('/wt', 'aaa');
+  fs.writeFileSync(path.join(fake.dir, 'flows.json'), JSON.stringify(withStep('Save(y)')));
+  await codemap.thumbnails('/wt', 'aaa');
+  assert.equal(fake.calls().filter(c => c.startsWith('render')).length, 2);
+});
+
+test('concurrent requests share one flows call, and renders run one at a time', async () => {
+  const fake = renderingCodemap(FLOWS([seg('a'), seg('b'), seg('c')]));
+  const log = path.join(fake.dir, 'overlap.log');
+  fs.writeFileSync(path.join(fake.dir, 'codemap'), `#!/bin/sh
+echo "$*" >> "${fake.dir}/calls.log"
+case "$1" in
+  flows) sleep 0.2; cat "${fake.dir}/flows.json" ;;
+  render)
+    echo start >> "${log}"; sleep 0.1; echo end >> "${log}"
+    while [ $# -gt 0 ]; do case "$1" in --out) out="$2";; esac; shift; done
+    echo '<svg/>' > "$out" ;;
+esac
+`, { mode: 0o755 });
+  const codemap = createCodemap({ env: fake.env });
+  const [a, b] = await Promise.all([codemap.thumbnails('/wt', 'aaa'), codemap.thumbnails('/wt', 'aaa')]);
+  assert.equal(fake.calls().filter(c => c.startsWith('flows')).length, 1);
+  assert.equal(a.items.length, 3);
+  assert.deepEqual(b, a);
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), ['start', 'end', 'start', 'end', 'start', 'end']);
+});
+
+test('output over the limit is reported as such, not as a timeout', async () => {
+  const fake = fakeCodemap();
+  const codemap = createCodemap({ env: { ...fake.env, FAKE_OUT: 'x'.repeat(5000) }, maxOutputBytes: 1000 });
+  await assert.rejects(codemap.summary('/wt', 'aaa'), e => /printed more than/.test(e.message) && !/timed out/.test(e.message));
+});
+
+test('a timeout kills codemap\'s whole process group, not just codemap', async () => {
+  const fake = renderingCodemap(FLOWS([seg('a')]));
+  const pidFile = path.join(fake.dir, 'child.pid');
+  fs.writeFileSync(path.join(fake.dir, 'codemap'), `#!/bin/sh
+case "$1" in flows) cat "${fake.dir}/flows.json" ;; render) sleep 30 & echo $! > "${pidFile}"; wait ;; esac
+`, { mode: 0o755 });
+  const { items } = await createCodemap({ env: fake.env, renderTimeoutMs: 300 }).thumbnails('/wt', 'aaa');
+  assert.match(items[0].error, /timed out after/);
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+  let alive = true;
+  for (let i = 0; i < 50 && alive; i++) {
+    try { process.kill(pid, 0); await new Promise(r => setTimeout(r, 20)); } catch { alive = false; }
+  }
+  assert.equal(alive, false, 'the extractor stand-in was killed too');
+});
+
 test('a render that takes too long fails with a timeout message instead of holding the panel', async () => {
   const fake = renderingCodemap(FLOWS([seg('a')]));
   fs.writeFileSync(path.join(fake.dir, 'codemap'), `#!/bin/sh
@@ -198,5 +251,5 @@ case "$1" in flows) cat "${fake.dir}/flows.json" ;; render) sleep 5 ;; esac
 test('view can open on one segment', async () => {
   const fake = fakeCodemap();
   await createCodemap({ env: fake.env }).view('/wt', 'aaa', 'm:A.B(int)');
-  assert.deepEqual(fake.calls(), ['view --repo /wt --base aaa --segment m:A.B(int)']);
+  assert.deepEqual(fake.calls(), ['view --repo /wt --base aaa --segment=m:A.B(int)']);
 });

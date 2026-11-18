@@ -206,7 +206,7 @@ async function loadStructure(id, rendering = false) {
     result = res.ok ? { summary: body } : { error: body.error || `Request failed (${res.status})` };
   } catch (e) { result = { error: e.message }; }
   if (state.structure?.id !== id) return; // another ticket was opened meanwhile
-  Object.assign(state.structure, { loading: false, thumbs: null, thumbsError: null }, result);
+  Object.assign(state.structure, { loading: false, thumbs: null, thumbsLoading: false, thumbsError: null, thumbsRequest: (state.structure.thumbsRequest || 0) + 1 }, result);
   renderAgent();
   if (result.summary?.flows?.changed) loadThumbnails(id);
 }
@@ -216,6 +216,7 @@ async function loadStructure(id, rendering = false) {
 async function loadThumbnails(id) {
   const st = state.structure;
   if (st?.id !== id || st.thumbs || st.thumbsLoading) return;
+  const request = st.thumbsRequest = (st.thumbsRequest || 0) + 1;
   Object.assign(st, { thumbsLoading: true, thumbsError: null });
   renderAgent();
   let result;
@@ -224,7 +225,8 @@ async function loadThumbnails(id) {
     const body = await res.json().catch(() => ({}));
     result = res.ok ? { thumbs: body.items || [] } : { thumbsError: body.error || `Request failed (${res.status})` };
   } catch (e) { result = { thumbsError: e.message }; }
-  if (state.structure?.id !== id) return;
+  // Another ticket was opened, or a summary refresh started a newer request: this answer is out of date.
+  if (state.structure?.id !== id || state.structure.thumbsRequest !== request) return;
   Object.assign(state.structure, { thumbsLoading: false }, result);
   renderAgent();
 }
